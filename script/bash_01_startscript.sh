@@ -3,7 +3,7 @@
 ### mkdir 00_data
 ### mkdir 00_data/00_raw
 
-### Copy sample data into Demulitplex-Sample_10-P12/00_data/00_raw
+### Copy sample data into Sample_Folder/00_data/00_raw
 ### make sure 'cutadapt' is available from bash
 
 TRIMMOMATIC=/data/extraProjects/arvindsu/Pal_3/tools/Trimmomatic-0.36/trimmomatic-0.36.jar
