@@ -6,11 +6,13 @@
 ### Copy sample data into Sample_Folder/00_data/00_raw
 ### make sure 'cutadapt' is available from bash
 
-TRIMMOMATIC=/data/extraProjects/arvindsu/Pal_3/tools/Trimmomatic-0.36/trimmomatic-0.36.jar
-TRIMMOMATIC_ADAPTOR=/data/extraProjects/arvindsu/Pal_3/tools/Trimmomatic-0.36/adapters/TruSeq3-PE-2.fa
+TOOLS=$PWD/tools
 
-BBMAP=/data/extraProjects/arvindsu/Pal_3/tools/bbmap/bbmap.sh
-PHIX=/data/extraProjects/arvindsu/Pal_3/tools/PhiX/ToRemove.fa
+TRIMMOMATIC=$TOOLS/Trimmomatic-0.36/trimmomatic-0.36.jar
+TRIMMOMATIC_ADAPTOR=$TOOLS/Trimmomatic-0.36/adapters/TruSeq3-PE-2.fa
+
+BBMAP=$TOOLS/bbmap/bbmap.sh
+PHIX=$TOOLS/PhiX/ToRemove.fa
 
 ### fill information above till here
 
