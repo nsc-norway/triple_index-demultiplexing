@@ -65,10 +65,22 @@ int bounded_levenshtein_distance(
 
 
 
-// --TODO--
-int aligned_s2_length(const string& s1, int s2len, const string& s2)
+/** aligned_s2_length
+ * Finds the length of the best alignment of s2 to s1. s1 is considered
+ * to be a template of fixed length.
+ * s2 will be aligned to it, with a penalty for insertions, deletions and
+ * substitutions. The length of the best match of s2 is returned. If there
+ * are several equally scored alignments, the length of the longest one is
+ * returned.
+ * 
+ * For the purpose of reducing computational time, this function takes
+ * an argument maxval indicating the maximum number of edit operations
+ * performed. This is easily computable in our case.
+ */
+int aligned_s2_length(int max_val, const string& s1, const string& s2)
 {
-    size_t s1len = s1.length();
+    const int s1len = s1.length();
+    const int s2len = s2.length();
 
     int buf1[s2len+1], buf2[s2len+1];
 
@@ -130,7 +142,14 @@ int aligned_s2_length(const string& s1, int s2len, const string& s2)
     // The value of prevcol[j] is the alignment score of s1 to s2, with j
     // being the position in s2 (TBC).
 
-    // TODO return prevcol[s2len];
-    return 0;
+    // The longest alignment with the best score will be 
+    int best = max_val;
+    int bestj = 0;
+    for (int al=first; al <= last; ++al) {
+        if (prevcol[al] <= best) {
+            bestj = al;
+        }
+    }
+    return bestj;
 }
 

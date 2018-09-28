@@ -247,13 +247,23 @@ int main(int argc, char* argv[]) {
                             if (use_levens) {
                                 if (bc_mismatches[i] == 0) {
                                     // Align spacer only
-                                    n_trim[i] = aligned_s2_length(sample.barcode[i].spacer,
-                                            data[i][1].substr(sample.barcode[i].length()));
+                                    n_trim_r[i] = aligned_s2_length(
+                                            sample.barcode[i].spacer.length(),
+                                            sample.barcode[i].spacer,
+                                            data[i][1].substr(
+                                                    sample.barcode[i].barcode.length()
+                                                    )
+                                            );
                                 }
                                 else {
                                     // Align barcode + spacer sequence
-                                    n_trim[i] = aligned_s2_length(
-                                            sample.barcode[i].barcode + sample.barcode[i].spacer, data[i][1]
+                                    string bcsp = sample.barcode[i].barcode +
+                                                        sample.barcode[i].spacer;
+                                    n_trim_r[i] = aligned_s2_length(
+                                            sample.barcode[i].spacer.length() +
+                                                bc_mismatches[i],
+                                            bcsp,
+                                            data[i][1]
                                             );
                                 }
                             }
