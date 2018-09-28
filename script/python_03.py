@@ -13,11 +13,11 @@ import os
 
 pwd = os.getcwd()
 
-PCR1_fwd = '../tools/index/PCR1_fwd'
-PCR1_rev = '../tools/index/PCR1_rev'
+PCR1_fwd = 'tools/index/PCR1_fwd'
+PCR1_rev = 'tools/index/PCR1_rev'
 
-read1 = '10_preprocess/20_bbmap/' + SAMPLE_NAME + '-NonPhiX_R1.fq '
-read2 = '10_preprocess/20_bbmap/' + SAMPLE_NAME + '-NonPhiX_R2.fq '
+read1 = '10_preprocess/10_bbmap/' + SAMPLE_NAME + '-NonPhiX_R1.fq '
+read2 = '10_preprocess/10_bbmap/' + SAMPLE_NAME + '-NonPhiX_R2.fq '
   
 for item in os.listdir('20_demultiplex/10_cutadapt'):
     if '.fastq.gz' in item:

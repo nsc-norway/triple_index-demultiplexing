@@ -14,14 +14,14 @@ import os
 pwd = os.getcwd()
 
 PCR1_fwd_spacer = {}
-for item in open('../tools/index/PCR1_fwd_spacer', 'r'):
+for item in open('tools/index/PCR1_fwd_spacer', 'r'):
     PCR1_fwd_spacer[item.rstrip().split()[0]] = item.rstrip().split()[1]
     
 PCR1_rev_spacer = {}
-for item in open('../tools/index/PCR1_rev_spacer', 'r'):
+for item in open('tools/index/PCR1_rev_spacer', 'r'):
     PCR1_rev_spacer[item.rstrip().split()[0]] = item.rstrip().split()[1]
 
-cutadapt_string1 = 'cutadapt -g "^'
+cutadapt_string1 = 'tools/cutadapt/bin/cutadapt -g "^'
 
 for item in os.listdir('20_demultiplex/30_split/'):
     if 'R1.fq' in item:
