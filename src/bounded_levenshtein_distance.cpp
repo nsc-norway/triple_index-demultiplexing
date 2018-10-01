@@ -148,6 +148,7 @@ int aligned_s2_length(int max_val, const string& s1, const string& s2)
     for (int al=first; al <= last; ++al) {
         if (prevcol[al] <= best) {
             bestj = al;
+            best = prevcol[al];
         }
     }
     return bestj;
