@@ -122,7 +122,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 6) {
         cerr << "usage: " << argv[0]
-             << " BARCODE_FILE SAMPLE_SHEET INPUT_R1 INPUT_R2 OUTPUT_PREFIX [MISMATCHES=1]" << endl;
+             << " BARCODE_FILE SAMPLE_SHEET INPUT_R1 INPUT_R2 OUTPUT_PREFIX [MISMATCHES_PER_READ=L1]" << endl;
         return 1;
     }
 
@@ -131,13 +131,14 @@ int main(int argc, char* argv[]) {
                     output_prefix(argv[5]);
 
     unsigned int allow_mismatches = 1;
-    bool use_levens = false;
+    bool use_levens = true;
     if (argc == 7) {
         if (argv[6][0] == 'L' || argv[6][0] == 'l') {
             use_levens = true;
             allow_mismatches = stoul(argv[6]+1);
         }
         else {
+            use_levens = false;
             allow_mismatches = stoul(argv[6]);
         }
     }
@@ -232,28 +233,27 @@ int main(int argc, char* argv[]) {
                 }
                 if (bc_mismatches[0] <= allow_mismatches) {
                     if (use_levens) {
-                        bc_mismatches[1] = bounded_levenshtein_distance(allow_mismatches + 1 - bc_mismatches[0],
+                        bc_mismatches[1] = bounded_levenshtein_distance(allow_mismatches + 1,
                                 bc2len, sample.barcode[1].barcode, bc2len, data[1][1]);
                     }
                     else {
                         bc_mismatches[1] = mismatches(sample.barcode[1].barcode, data[1][1]);
                     }
-                    unsigned int total_mismatches = bc_mismatches[0] + bc_mismatches[1];
 
-                    if (total_mismatches <= allow_mismatches) {
+                    if (bc_mismatches[1] <= allow_mismatches) {
                         size_t n_trim_r[2];
                         // Determine how much to trim for each of R1, R2
                         for (int i=0; i<2; ++i) {
                             if (use_levens) {
-                                if (bc_mismatches[i] == 0) {
+                                if (bc_mismatches[i] < 0) {
                                     // Align spacer only
                                     n_trim_r[i] = aligned_s2_length(
-                                            sample.barcode[i].spacer.length(),
+                                            sample.barcode[i].spacer.length() + 1,
                                             sample.barcode[i].spacer,
                                             data[i][1].substr(
                                                     sample.barcode[i].barcode.length()
                                                     )
-                                            );
+                                            ) + sample.barcode[i].barcode.length();
                                 }
                                 else {
                                     // Align barcode + spacer sequence
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
                                                         sample.barcode[i].spacer;
                                     n_trim_r[i] = aligned_s2_length(
                                             sample.barcode[i].spacer.length() +
-                                                bc_mismatches[i],
+                                                allow_mismatches + 1,
                                             bcsp,
                                             data[i][1]
                                             );
@@ -273,7 +273,7 @@ int main(int argc, char* argv[]) {
                         }
 
                         sample.n_reads++;
-                        if (total_mismatches == 0) sample.n_perfect_barcode++;
+                        if (bc_mismatches[0] + bc_mismatches[1] == 0) sample.n_perfect_barcode++;
 
                         (*sample.out_r1) << data[0][0] << '\n';
                         (*sample.out_r1) << data[0][1].substr(n_trim_r[0]) << '\n';
