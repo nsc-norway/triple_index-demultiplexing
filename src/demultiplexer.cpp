@@ -7,12 +7,12 @@
 #include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/program_options.hpp>
-#include "thread_source.hpp"
-#include "bounded_levenshtein_distance.cpp"
+//#include "thread_source.hpp"
 
 #define BUFFER_SIZE 1024
 using namespace std;
 using namespace boost::iostreams;
+#include "bounded_levenshtein_distance.cpp"
 
 class BarcodeAndSpacer {
     public:
@@ -134,12 +134,12 @@ int main(int argc, char* argv[]) {
     bool use_levens = true;
     if (argc == 7) {
         if (argv[6][0] == 'L' || argv[6][0] == 'l') {
-            use_levens = true;
             allow_mismatches = stoul(argv[6]+1);
+            use_levens = allow_mismatches > 0;
         }
         else {
-            use_levens = false;
             allow_mismatches = stoul(argv[6]);
+            use_levens = false;
         }
     }
     
@@ -153,14 +153,14 @@ int main(int argc, char* argv[]) {
         cerr << "Error: No samples found." << endl;
         return 1;
     }
-    unsigned int bc1len = samples[0].barcode[0].barcode.length();
-    unsigned int bc2len = samples[0].barcode[1].barcode.length();
+    unsigned int bc0len = samples[0].barcode[0].barcode.length();
+    unsigned int bc1len = samples[0].barcode[1].barcode.length();
 
     // Check that all samples have sample length for barcode 1 and barcode 2
     if (!all_of(samples.begin(), samples.end(),
-                [bc1len,bc2len](const Sample& s) {
-                    return s.barcode[0].barcode.length() == bc1len
-                        && s.barcode[1].barcode.length() == bc2len;
+                [bc0len,bc1len](const Sample& s) {
+                    return s.barcode[0].barcode.length() == bc0len
+                        && s.barcode[1].barcode.length() == bc1len;
                 })) {
         cerr << "Error: Barcodes have different length." << endl;
         return 1;
@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
     unsigned long undetermined_reads = 0;
     int i;
     unsigned long n_total_reads = 0;
-    while (input_r1 && input_r2) {
+    while (input_r1 && input_r2 /* && n_total_reads < 10*/) {
         // One record from each FQ
         getline(input_r1, data[0][0]);
         if (!input_r1) {
@@ -217,16 +217,15 @@ int main(int argc, char* argv[]) {
         for (i=0; i<4; ++i)
             getline(input_r2, data[1][i]);
         
-        // List of pairs (mismatches, index) of samples matching barcode1. index is an
-        // index into the main list of samples.
-        list<pair<unsigned int,int>> bc1_matching_sample;
         bool undetermined = true;
-        if (data[0][1].length() >= bc1len && data[1][1].length() >= bc2len) {
+        size_t data0_len = data[0][1].length();
+        size_t data1_len = data[1][1].length();
+        if (data0_len >= bc0len && data1_len >= bc1len) {
             for (Sample& sample : samples) {
                 unsigned int bc_mismatches[2];
                 if (use_levens) {
                     bc_mismatches[0] = bounded_levenshtein_distance(allow_mismatches + 1,
-                            bc1len, sample.barcode[0].barcode, bc1len, data[0][1]);
+                            sample.barcode[0].barcode, data[0][1], false);
                 }
                 else {
                     bc_mismatches[0] = mismatches(sample.barcode[0].barcode, data[0][1]);
@@ -234,7 +233,7 @@ int main(int argc, char* argv[]) {
                 if (bc_mismatches[0] <= allow_mismatches) {
                     if (use_levens) {
                         bc_mismatches[1] = bounded_levenshtein_distance(allow_mismatches + 1,
-                                bc2len, sample.barcode[1].barcode, bc2len, data[1][1]);
+                                sample.barcode[1].barcode, data[1][1], false);
                     }
                     else {
                         bc_mismatches[1] = mismatches(sample.barcode[1].barcode, data[1][1]);
@@ -247,23 +246,20 @@ int main(int argc, char* argv[]) {
                             if (use_levens) {
                                 if (bc_mismatches[i] < 0) {
                                     // Align spacer only
-                                    n_trim_r[i] = aligned_s2_length(
+                                    n_trim_r[i] = bounded_levenshtein_distance(
                                             sample.barcode[i].spacer.length() + 1,
                                             sample.barcode[i].spacer,
-                                            data[i][1].substr(
-                                                    sample.barcode[i].barcode.length()
-                                                    )
-                                            ) + sample.barcode[i].barcode.length();
+                                            data[i][1].substr(sample.barcode[i].barcode.length()),
+                                            true) + sample.barcode[i].barcode.length();
                                 }
                                 else {
                                     // Align barcode + spacer sequence
                                     string bcsp = sample.barcode[i].barcode +
                                                         sample.barcode[i].spacer;
-                                    n_trim_r[i] = aligned_s2_length(
+                                    n_trim_r[i] = bounded_levenshtein_distance(
                                             sample.barcode[i].spacer.length() +
                                                 allow_mismatches + 1,
-                                            bcsp,
-                                            data[i][1]
+                                            bcsp, data[i][1], true
                                             );
                                 }
                             }
@@ -313,8 +309,9 @@ int main(int argc, char* argv[]) {
             cout.precision(2);
             cout << sample.name << '\t' << sample.n_reads << '\t'
                 << fixed
-                << sample.n_reads * 100.0 / n_total_reads << '\t'
-                << sample.n_perfect_barcode * 100.0 / sample.n_reads << '\n';
+                << sample.n_reads * 100.0 / max(n_total_reads, 1ul) << '\t'
+                << sample.n_perfect_barcode * 100.0 / max(sample.n_reads, 1ul)
+                << '\n';
         }
         cout << "------------------------------------------------------\n";
         cout << "Undetermined\t" << undetermined_reads << '\t'
