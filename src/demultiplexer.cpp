@@ -1,14 +1,13 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <sstream>
 #include <fstream>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
-#include <boost/program_options.hpp>
 
-#define BUFFER_SIZE 1024
+
 using namespace std;
 using namespace boost::iostreams;
 #include "bounded_levenshtein_distance.cpp"
