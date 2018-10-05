@@ -7,7 +7,6 @@
 #include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/program_options.hpp>
-//#include "thread_source.hpp"
 
 #define BUFFER_SIZE 1024
 using namespace std;
@@ -127,10 +126,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // First parse options: most are strings, except the mismatch parameters
     const string    barcode_file(argv[1]), sample_sheet(argv[2]),
                     input_file_r1(argv[3]), input_file_r2(argv[4]),
                     output_prefix(argv[5]);
 
+    // Barcode mismatches can be either Ln for Levenshtein distance n, or n
+    // for Hamming distance n.
     unsigned int barcode_mismatches = 1, alignment_mismatches;
     bool use_levens = true;
     if (argc >= 7) {
@@ -143,6 +145,8 @@ int main(int argc, char* argv[]) {
             use_levens = false;
         }
     }
+    // Alignment distance can optionally be set higher than barcode mismatch,
+    // to allow the alignment of more errors in spacer sequences.
     if (argc >= 8) {
         alignment_mismatches = stoul(argv[7]);
     }
@@ -150,11 +154,15 @@ int main(int argc, char* argv[]) {
         alignment_mismatches = barcode_mismatches;
     }
     
+    // Read named barcodes from a single tab-separated file. This file should also
+    // contain the heterogeneity spacer sequences.
     vector<BarcodeAndSpacer> barcodes = getBarcodesAndSpacers(barcode_file);
     if (barcodes.empty()) {
         cerr << "Error: Barcode file is empty." << endl;
         return 1;
     }
+    // Read samples from sample sheet. Each sample record refers to the names of the
+    // barcode sequences.
     vector<Sample> samples = getSamples(barcodes, sample_sheet);
     if (samples.empty()) {
         cerr << "Error: No samples found." << endl;
@@ -200,24 +208,22 @@ int main(int argc, char* argv[]) {
     input_r2_ifs.push(r2raw);
     istream & input_r1 = input_r1_ifs;
     istream & input_r2 = input_r2_ifs;
-    //stream<thread_source> input_r1(input_r1_ifs);
-    //stream<thread_source> input_r2(input_r2_ifs);
-    //input_r1->start();
-    //input_r2->start();
     
-    // Open output files
+    // Open output files for all samples
     for (Sample& sample : samples) {
         if (!sample.openFiles(output_prefix)) {
             cerr << "Failed to open output file for sample " << sample.name << endl;
             exit(1);
         }
     }
+    // and Undetermined
     filtering_ostream und_r1, und_r2;
     und_r1.push(gzip_compressor());
     und_r1.push(file_descriptor_sink(output_prefix + "Undetermined_R1.fq.gz"));
     und_r2.push(gzip_compressor());
     und_r2.push(file_descriptor_sink(output_prefix + "Undetermined_R2.fq.gz"));
 
+    // Print information on startup
     cerr << "\nDemultiplexing " << samples.size() << " samples...\n\n";
     cerr << " Allowed barcode mismatches: " << barcode_mismatches << '\n';
     cerr << " String distance:            ";
@@ -232,7 +238,8 @@ int main(int argc, char* argv[]) {
     int i;
     unsigned long n_total_reads = 0;
     while (input_r1 && input_r2 /* && n_total_reads < 1 */) {
-        // One record from each FQ
+
+        // Read one record from each FQ
         getline(input_r1, data[0][0]);
         if (!input_r1) {
             // Make a dummy read on R2 if error / EOF on R1, to sync it up
@@ -285,8 +292,9 @@ int main(int argc, char* argv[]) {
                     }
 
                     if (bc_mismatches[1] <= barcode_mismatches) {
-                        // Determine how much to trim for each of R1, R2
-
+                        // Sample barcode match -- output trimmed FQ to sample's output file
+                        // (in case of Levenshtein distance, n_trim_r[i] may be zero if the
+                        // alignment to the spacer seequence failed)
                         sample.n_reads++;
                         if (bc_mismatches[0] + bc_mismatches[1] == 0) sample.n_perfect_barcode++;
 
@@ -306,6 +314,7 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+        // No match found, output untrimmed FQ
         if (undetermined) {
             undetermined_reads++;
             for (i=0; i<4; ++i) und_r1 << data[0][i] << '\n';

@@ -1,28 +1,54 @@
-/**
+/** 
+ * mismatch_and_alignment
+ *
  * This function performs two operations:
- * - Computes the Levenshtein distance between a substring of s1 and s2 up
- *    to a maximum bound on edit operations
+ * - Computes the Levenshtein distance between a specified substring of s1,
+ *    and s2, up to a maximum bound on edit operations
  * - Determines the best alignment of s2 to the full s1, also bounded by a
  *    different number of edit operations.
  *
- * The Levenshtein distance is computed up to length index_len.
+ * The Levenshtein distance is computed up to length barcode_length characters
+ * of s2. If there is a match within barcode_length, continue processing for
+ * all of the length of s1 and determine the aligned length of s2 (this is 
+ * used to know how much to trim).
  *
- * If there is a match within index_len, continue processing for all of the
- * length of s1. 
- *
- * If there are more characters in s2 after all characters in s1 are used,
- * there is no penalty for these extra characters. This means it only computes
- * the alignment between s1 and a substring of s2 (this is more
- * relevant for our problem than the true levenshtein distance).
+ * If there are more characters left in s2 after all characters in s1 are used,
+ * there is no penalty for these extra characters.
  *
  * This algorithm is faster than a naive approach, as it applies the max_val
- * bound at every step, excluding a lot of computations which are guaranteed
+ * bounds at every step, excluding a lot of computations which are guaranteed
  * to yield a distance above or equal to max_val. It aborts as soon as there
  * is no chance of getting a value below max_val.
  *
+ * Parameters:
+ *  max_val_barcode: The max value to return for Levenshtein distance of 
+ *                   barcode (all higher values are clipped). Such a
+ *                   threshold is relevant only for performance reasons.
+ *  max_val_align:   Limit of edit operations allowed for alignment of the
+ *                   whole sequence of s1. This parameter works similarly
+ *                   to max_val_barcode, but the distance of the full string
+ *                   alignment is not actually returned. Instead, if alignment
+ *                   reaches this value, the aligned distance of zero is
+ *                   returned.
+ *  barcode_length:  Length of substring of s1 to use for barcode comparison.
+ *                   The bound max_val_barcode is only applied to this sequence.
+ *  s1:              The first string, representing the known index and spacer
+ *                   sequence, concatenated.
+ *  s2:              The data to examine for alignment and mismatches. The full
+ *                   length read can be passed without performance impact.
+ *                   
+ *
  * Returns:
- *  first:  the mismatch between s2 and s1 up to barcode_len
- *  second: the length of s2 when aligned to the full s1
+ *  first:  The edit distance between s2 and substring(s1, 0, barcode_length),
+ *          using the best matching substring of s2 (starting at 0). If the
+ *          distance exceeds max_val_barcode, that value is returned instead.
+ *  second: The length of s2 when aligned to the full sequence of s1. The length
+ *          of the match with fewest edit operations is returned. If several
+ *          matches have equal distance, the shortest match is returned (please
+ *          see loop before return statement, this could change). If the edit
+ *          distance of the barcode is greater or equal to max_val_barcode, the
+ *          value of second is undefined. If the total number of edit operations is
+ *          equal or greater than max_val_align, the value zero is returned.
  *
  */
 
@@ -141,8 +167,8 @@ pair<int,int> mismatch_and_alignment(int max_val_barcode, int max_val_align,
         }
     }
     int best_len = 0, minval = max_val_align;
-    for (int i=first; i<=last; ++i) {
-    //for (int i=last; i>=first; --i) {
+    //for (int i=first; i<=last; ++i) { // Prefer long match when equal score
+    for (int i=last; i>=first; --i) { // Prefer short match when equal score
         if (prevcol[i+1] < minval) {
             minval = prevcol[i+1];
             best_len = i+1;
