@@ -16,11 +16,10 @@ using namespace boost::iostreams;
 
 class BarcodeAndSpacer {
     public:
-    string id, barcode, spacer;
+    string id, barcode, spacer, full;
     size_t total_length;
     BarcodeAndSpacer(string id, string barcode, string spacer)
-        : id(id), barcode(barcode), spacer(spacer) {
-        total_length = barcode.length() + spacer.length();
+        : id(id), barcode(barcode), spacer(spacer), full(barcode+spacer) {
     }
 };
 
@@ -31,8 +30,8 @@ public:
     unsigned long n_reads = 0, n_perfect_barcode = 0;
     filtering_ostream *out_r1 = nullptr, *out_r2 = nullptr;
 
-    Sample(const string name, BarcodeAndSpacer bc1, BarcodeAndSpacer bc2) :
-        name(name), barcode({bc1, bc2}) {}
+    Sample(const string name, BarcodeAndSpacer bc0, BarcodeAndSpacer bc1) :
+        name(name), barcode({bc0, bc1}) {}
 
     ~Sample() {
         delete out_r1;
@@ -121,8 +120,10 @@ int mismatches(const string& templ, const string& test) {
 int main(int argc, char* argv[]) {
 
     if (argc < 6) {
-        cerr << "usage: " << argv[0]
-             << " BARCODE_FILE SAMPLE_SHEET INPUT_R1 INPUT_R2 OUTPUT_PREFIX [MISMATCHES_PER_READ=L1]" << endl;
+        cerr << "usage:\n " << argv[0]
+             << " BARCODE_FILE SAMPLE_SHEET INPUT_R1 INPUT_R2 OUTPUT_PREFIX \\\n"
+             << "             [BARCODE_MISMATCHES_PER_READ=L1 \\\n"
+             << "             [ALIGNMENT_MISMATCHES=BARCODE_MISMATCHES_PER_READ]]" << endl;
         return 1;
     }
 
@@ -130,17 +131,23 @@ int main(int argc, char* argv[]) {
                     input_file_r1(argv[3]), input_file_r2(argv[4]),
                     output_prefix(argv[5]);
 
-    unsigned int allow_mismatches = 1;
+    unsigned int barcode_mismatches = 1, alignment_mismatches;
     bool use_levens = true;
-    if (argc == 7) {
+    if (argc >= 7) {
         if (argv[6][0] == 'L' || argv[6][0] == 'l') {
-            allow_mismatches = stoul(argv[6]+1);
-            use_levens = allow_mismatches > 0;
+            barcode_mismatches = stoul(argv[6]+1);
+            use_levens = barcode_mismatches > 0;
         }
         else {
-            allow_mismatches = stoul(argv[6]);
+            barcode_mismatches = stoul(argv[6]);
             use_levens = false;
         }
+    }
+    if (argc >= 8) {
+        alignment_mismatches = stoul(argv[7]);
+    }
+    else {
+        alignment_mismatches = barcode_mismatches;
     }
     
     vector<BarcodeAndSpacer> barcodes = getBarcodesAndSpacers(barcode_file);
@@ -164,6 +171,24 @@ int main(int argc, char* argv[]) {
                 })) {
         cerr << "Error: Barcodes have different length." << endl;
         return 1;
+    }
+
+    // Make a list to map barcode1 to a list of samples with that barcode1
+    vector<BarcodeAndSpacer> barcode0_list;
+    vector<list<Sample*> > barcode0_sample_list_list;
+    for (Sample& s : samples) {
+        bool found = false;
+        for (int i=0; i<barcode0_list.size(); ++i) {
+            if (s.barcode[0].barcode == barcode0_list[i].barcode) {
+                found = true;
+                barcode0_sample_list_list[i].push_back(&s);
+                break;
+            }
+        }
+        if (!found) {
+            barcode0_list.push_back(s.barcode[0]);
+            barcode0_sample_list_list.push_back(list<Sample*>(1, &s));
+        }
     }
 
     // Input files
@@ -194,17 +219,19 @@ int main(int argc, char* argv[]) {
     und_r2.push(file_descriptor_sink(output_prefix + "Undetermined_R2.fq.gz"));
 
     cerr << "\nDemultiplexing " << samples.size() << " samples...\n\n";
-    cerr << " Allowed mismatches: " << allow_mismatches << '\n';
-    cerr << " String distance:    ";
-    if (use_levens) cerr << "Levenshtein" << '\n' << endl;
-    else            cerr << "Hamming" << '\n' << endl;
+    cerr << " Allowed barcode mismatches: " << barcode_mismatches << '\n';
+    cerr << " String distance:            ";
+    if (use_levens) cerr << "Levenshtein" << '\n';
+    else            cerr << "Hamming" << '\n';
+    cerr << " Alignment string distance:  " << alignment_mismatches;
+    cerr << '\n' << endl;
 
     // Buffer for 1 FASTQ record (4 lines) from each file R1 and R2
     string data[2][4];
     unsigned long undetermined_reads = 0;
     int i;
     unsigned long n_total_reads = 0;
-    while (input_r1 && input_r2 /* && n_total_reads < 10*/) {
+    while (input_r1 && input_r2 /* && n_total_reads < 1 */) {
         // One record from each FQ
         getline(input_r1, data[0][0]);
         if (!input_r1) {
@@ -221,52 +248,44 @@ int main(int argc, char* argv[]) {
         size_t data0_len = data[0][1].length();
         size_t data1_len = data[1][1].length();
         if (data0_len >= bc0len && data1_len >= bc1len) {
-            for (Sample& sample : samples) {
-                unsigned int bc_mismatches[2];
+            int bc_mismatches[2], n_trim_r[2];
+            int bc0_match_index = -1;
+
+            // Try to match barcode 1
+            for (i = 0; bc0_match_index == -1 && i < barcode0_list.size(); ++i) {
+                BarcodeAndSpacer & bcs = barcode0_list[i];
                 if (use_levens) {
-                    bc_mismatches[0] = bounded_levenshtein_distance(allow_mismatches + 1,
-                            sample.barcode[0].barcode, data[0][1], false);
+                    auto result = mismatch_and_alignment(barcode_mismatches + 1,
+                            alignment_mismatches + 1,
+                            bc0len, bcs.full, data[0][1]);
+                    bc_mismatches[0] = result.first;
+                    n_trim_r[0] = result.second;
                 }
                 else {
-                    bc_mismatches[0] = mismatches(sample.barcode[0].barcode, data[0][1]);
+                    bc_mismatches[0] = mismatches(bcs.barcode, data[0][1]);
+                    n_trim_r[0] = bcs.full.length();
                 }
-                if (bc_mismatches[0] <= allow_mismatches) {
+                if (bc_mismatches[0] <= barcode_mismatches) bc0_match_index = i;
+            }
+
+            if (bc0_match_index != -1) {
+                // Loop over samples to match bc2
+                for (Sample* pSample : barcode0_sample_list_list[bc0_match_index]) {
+                    Sample & sample = *pSample;
+                    BarcodeAndSpacer & bcs = sample.barcode[1];
                     if (use_levens) {
-                        bc_mismatches[1] = bounded_levenshtein_distance(allow_mismatches + 1,
-                                sample.barcode[1].barcode, data[1][1], false);
+                        auto result = mismatch_and_alignment(barcode_mismatches + 1,
+                                alignment_mismatches + 1, bc1len, bcs.full, data[1][1]);
+                        bc_mismatches[1] = result.first;
+                        n_trim_r[1] = result.second;
                     }
                     else {
-                        bc_mismatches[1] = mismatches(sample.barcode[1].barcode, data[1][1]);
+                        bc_mismatches[1] = mismatches(bcs.barcode, data[1][1]);
+                        n_trim_r[1] = bcs.full.length();
                     }
 
-                    if (bc_mismatches[1] <= allow_mismatches) {
-                        size_t n_trim_r[2];
+                    if (bc_mismatches[1] <= barcode_mismatches) {
                         // Determine how much to trim for each of R1, R2
-                        for (int i=0; i<2; ++i) {
-                            if (use_levens) {
-                                if (bc_mismatches[i] < 0) {
-                                    // Align spacer only
-                                    n_trim_r[i] = bounded_levenshtein_distance(
-                                            sample.barcode[i].spacer.length() + 1,
-                                            sample.barcode[i].spacer,
-                                            data[i][1].substr(sample.barcode[i].barcode.length()),
-                                            true) + sample.barcode[i].barcode.length();
-                                }
-                                else {
-                                    // Align barcode + spacer sequence
-                                    string bcsp = sample.barcode[i].barcode +
-                                                        sample.barcode[i].spacer;
-                                    n_trim_r[i] = bounded_levenshtein_distance(
-                                            sample.barcode[i].spacer.length() +
-                                                allow_mismatches + 1,
-                                            bcsp, data[i][1], true
-                                            );
-                                }
-                            }
-                            else {
-                                n_trim_r[i] = sample.barcode[i].total_length;
-                            }
-                        }
 
                         sample.n_reads++;
                         if (bc_mismatches[0] + bc_mismatches[1] == 0) sample.n_perfect_barcode++;
