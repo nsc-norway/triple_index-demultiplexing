@@ -69,9 +69,8 @@ vector<BarcodeAndSpacer> getBarcodesAndSpacers(const string& barcode_file) {
     return result;
 }
 
-vector<Sample> getSamples(const vector<BarcodeAndSpacer>& barcodes, const string& sample_sheet) {
+void getSamples(vector<Sample>& samples, const vector<BarcodeAndSpacer>& barcodes, const string& sample_sheet) {
     ifstream ssheet(sample_sheet);
-    vector<Sample> samples;
     int linenum = 1;
     while (ssheet) {
         string line;
@@ -103,7 +102,6 @@ vector<Sample> getSamples(const vector<BarcodeAndSpacer>& barcodes, const string
         }
         linenum++;
     }
-    return samples;
 }
 
 int mismatches(const string& templ, const string& test) {
@@ -162,7 +160,8 @@ int main(int argc, char* argv[]) {
     }
     // Read samples from sample sheet. Each sample record refers to the names of the
     // barcode sequences.
-    vector<Sample> samples = getSamples(barcodes, sample_sheet);
+    vector<Sample> samples;
+    getSamples(samples, barcodes, sample_sheet);
     if (samples.empty()) {
         cerr << "Error: No samples found." << endl;
         return 1;
