@@ -167,8 +167,8 @@ pair<int,int> mismatch_and_alignment(int max_val_barcode, int max_val_align,
         }
     }
     int best_len = 0, minval = max_val_align;
-    //for (int i=first; i<=last; ++i) { // Prefer long match when equal score
-    for (int i=last; i>=first; --i) { // Prefer short match when equal score
+    for (int i=first; i<=last; ++i) { // Prefer long match when equal score
+    //for (int i=last; i>=first; --i) { // Prefer short match when equal score
         if (prevcol[i+1] < minval) {
             minval = prevcol[i+1];
             best_len = i+1;
