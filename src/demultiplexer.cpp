@@ -26,25 +26,41 @@ public:
     BarcodeAndSpacer barcode[2];
     string name;
     unsigned long n_reads = 0, n_perfect_barcode = 0;
+    string path1, path2;
     filtering_ostream *out_r1 = nullptr, *out_r2 = nullptr;
 
     Sample(const string name, BarcodeAndSpacer bc0, BarcodeAndSpacer bc1) :
         name(name), barcode({bc0, bc1}) {}
 
     ~Sample() {
+        bool delete_files = n_reads == 0 && out_r1 && out_r2;
         delete out_r1;
         delete out_r2;
+        if (delete_files) {
+            unlink(path1.c_str());
+            unlink(path2.c_str());
+        }
     }
 
     bool openFiles(string prefix) {
-        file_descriptor_sink fds1(prefix + name + "_R1.fq.gz"), fds2(prefix + name + "_R2.fq.gz");
+        path1 = prefix + name + "_R1.fq.gz";
+        path2 = prefix + name + "_R2.fq.gz";
+        file_descriptor_sink fds1(path1), fds2(path2);
         out_r1 = new filtering_ostream();
         out_r1->push(gzip_compressor());
         out_r1->push(fds1);
         out_r2 = new filtering_ostream();
         out_r2->push(gzip_compressor());
         out_r2->push(fds2);
-        return fds1.is_open() && fds2.is_open();
+        if (fds1.is_open() && fds2.is_open()) {
+            return true;
+        }
+        else {
+            delete out_r1;
+            delete out_r2;
+            out_r1 = out_r2 = nullptr;
+            return false;
+        }
     }
 
 };
