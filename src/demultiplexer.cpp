@@ -310,6 +310,7 @@ int main(int argc, char* argv[]) {
                         for (int i=0; i<2; ++i) {
                             if (n_trim_r[i] == 0) {
                                 sample.n_spacer_fail++;
+                                n_trim_r[i] = sample.barcode[i].full.length();
                             }
                         }
                         

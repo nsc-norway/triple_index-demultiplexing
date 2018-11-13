@@ -85,11 +85,12 @@ Example `SAMPLE_SHEET`:
   * `ALIGNMENT_MISMATCHES`: Controls the pairwise alignment of the barcode+spacer sequence
     to the read, for the purpose of trimming. The number of edit operations allowed to match
     the read to the expected sequence. The solution with the fewest edit operations is always
-    chosen, and if there are multiple solutions, the shortest match is chosen. This parameter
-    is ignored if the Hamming distance is used for mismatches -- then the true length of the
-    barcode+spacer is always trimmed. As the alignment and mismatch counting is done in one
-    operation, the value of `ALIGNMENT_MISMATCHES` should always be greater or equal to
-    `BARCODE_MISMATCHES_PER_READ`.
+    chosen, and if there are multiple solutions, the shortest match is chosen. If the combined
+    sequence does not match within this threshold, the true barcode and spacer length is trimmed.
+    This parameter is ignored if the Hamming distance is used for mismatches -- then the true
+    length of the barcode+spacer is always trimmed. As the alignment and mismatch counting is
+    done in one operation, the value of `ALIGNMENT_MISMATCHES` should always be greater or
+    equal to `BARCODE_MISMATCHES_PER_READ`.
 
 
 ## output
@@ -109,8 +110,8 @@ A summary is written to standard output after completion, with the following col
   * `PCT_PERFECT_BARCODE`: Percentage of the reads assigned to this sample that had no mismatches,
     in the barcode, neither in read 1 barcode or read 2 barcode.
 
-  * `PCT_SPACER_FAIL`: Percentage of the reads assigned to this sample which failed to aligned the
-    spacer sequence, and were thus untrimmed. This percentage is per end, so a read with forward
-    spacer matched, and reverse spacer failed, counts as 50 %.
+  * `PCT_SPACER_FAIL`: Percentage of the reads assigned to this sample which failed to aligne the
+    spacer sequence, and thus have much more uncertain trimming. This percentage is per fragment
+    end, so a read with forward spacer matched, and reverse spacer failed, counts as 50 %.
 
 
