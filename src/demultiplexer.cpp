@@ -1,6 +1,9 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <mutex>
+#include <queue>
+#include <deque>
 #include <sstream>
 #include <fstream>
 #include <boost/iostreams/device/file_descriptor.hpp>
@@ -128,6 +131,32 @@ int mismatches(const string& templ, const string& test) {
     }
     return mismatch;
 }
+
+class OutputJob {
+    size_t trim[2];
+    string data[4];
+};
+
+class QueueManager {
+
+    const size_t QUEUE_MAX = 5, QUEUE_FILL_LEVEL = 3;
+    const size_t BATCH_SIZE = 100; // reads
+
+    mutex mastermutex;
+
+    mutex inputmx[2];
+    queue<string[4]> input[2];
+    bool input_busy[2] = {false, false};
+    
+    vector<queue<OutputJob>> outputs;
+    vector<mutex> outputmx;
+
+    bool finish = false;
+
+    void run() {
+        
+    }
+};
 
 int main(int argc, char* argv[]) {
 
