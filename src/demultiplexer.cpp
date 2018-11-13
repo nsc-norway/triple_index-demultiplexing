@@ -25,7 +25,7 @@ class Sample {
 public:
     BarcodeAndSpacer barcode[2];
     string name;
-    unsigned long n_reads = 0, n_perfect_barcode = 0;
+    unsigned long n_reads = 0, n_perfect_barcode = 0, n_spacer_fail = 0;
     string path1, path2;
     filtering_ostream *out_r1 = nullptr, *out_r2 = nullptr;
 
@@ -238,6 +238,7 @@ int main(int argc, char* argv[]) {
     und_r2.push(file_descriptor_sink(output_prefix + "Undetermined_R2.fq.gz"));
 
     // Print information on startup
+    cerr.precision(2);
     cerr << "\nDemultiplexing " << samples.size() << " samples...\n\n";
     cerr << " Allowed barcode mismatches: " << barcode_mismatches << '\n';
     cerr << " String distance:            ";
@@ -306,6 +307,12 @@ int main(int argc, char* argv[]) {
                     }
 
                     if (bc_mismatches[1] <= barcode_mismatches) {
+                        for (int i=0; i<2; ++i) {
+                            if (n_trim_r[i] == 0) {
+                                sample.n_spacer_fail++;
+                            }
+                        }
+                        
                         // Sample barcode match -- output trimmed FQ to sample's output file
                         // (in case of Levenshtein distance, n_trim_r[i] may be zero if the
                         // alignment to the spacer seequence failed)
@@ -335,7 +342,8 @@ int main(int argc, char* argv[]) {
             for (i=0; i<4; ++i) und_r2 << data[1][i] << '\n';
         }
         if (++n_total_reads % 1000000 == 0) {
-            cerr << "Processed " << n_total_reads << " reads." << endl;
+            cerr << "Processed " << n_total_reads << " reads. Undetermined: "
+                 << (undetermined_reads * 100.0 / n_total_reads) << " %."<< endl;
         }
     }
     if (!input_r1.eof() || !input_r2.eof()) {
@@ -345,17 +353,18 @@ int main(int argc, char* argv[]) {
     }
     else {
         cerr << "\nCompleted demultiplexing " << n_total_reads << " PE reads.\n" << endl;
-        cout << "SAMPLE_NAME\tNUM_READS\tPCT_READS\tPCT_PERFECT_BARCODE\n";
-        cout << "------------------------------------------------------\n";
+        cout << "SAMPLE_NAME\tNUM_READS\tPCT_READS\tPCT_PERFECT_BARCODE\tPCT_SPACER_FAIL\n";
+        cout << "---------------------------------------------------------------\n";
         for (Sample& sample : samples) {
             cout.precision(2);
             cout << sample.name << '\t' << sample.n_reads << '\t'
                 << fixed
                 << sample.n_reads * 100.0 / max(n_total_reads, 1ul) << '\t'
-                << sample.n_perfect_barcode * 100.0 / max(sample.n_reads, 1ul)
+                << sample.n_perfect_barcode * 100.0 / max(sample.n_reads, 1ul) << '\t'
+                << sample.n_spacer_fail * 50.0 / max(sample.n_reads, 1ul)
                 << '\n';
         }
-        cout << "------------------------------------------------------\n";
+        cout << "---------------------------------------------------------------\n";
         cout << "Undetermined\t" << undetermined_reads << '\t'
             << undetermined_reads * 100.0 / n_total_reads << "\t-\n";
     }

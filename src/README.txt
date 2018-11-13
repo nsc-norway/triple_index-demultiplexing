@@ -91,3 +91,26 @@ Example `SAMPLE_SHEET`:
     operation, the value of `ALIGNMENT_MISMATCHES` should always be greater or equal to
     `BARCODE_MISMATCHES_PER_READ`.
 
+
+## output
+
+FASTQ files are created for each sample, and a pair of files with name Undetermined, for reads
+having barcodes that didn't match any of the samples. If there are no reads from a sample, no
+output file is produced for that sample.
+
+A summary is written to standard output after completion, with the following columns:
+
+  * `SAMPLE_NAME`: As appears in the sample sheet. Undetermined is below the line.
+
+  * `NUM_READS`: Number of read pairs assigned to this sample.
+
+  * `PCT_READS`: The percentage of reads coming from this sample.
+
+  * `PCT_PERFECT_BARCODE`: Percentage of the reads assigned to this sample that had no mismatches,
+    in the barcode, neither in read 1 barcode or read 2 barcode.
+
+  * `PCT_SPACER_FAIL`: Percentage of the reads assigned to this sample which failed to aligned the
+    spacer sequence, and were thus untrimmed. This percentage is per end, so a read with forward
+    spacer matched, and reverse spacer failed, counts as 50 %.
+
+
