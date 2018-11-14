@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <queue>
 #include <deque>
 #include <sstream>
@@ -10,6 +11,7 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 
+const size_t BATCH_SIZE = 100; // reads
 
 using namespace std;
 using namespace boost::iostreams;
@@ -30,41 +32,9 @@ public:
     string name;
     unsigned long n_reads = 0, n_perfect_barcode = 0, n_spacer_fail = 0;
     string path1, path2;
-    filtering_ostream *out_r1 = nullptr, *out_r2 = nullptr;
 
     Sample(const string name, BarcodeAndSpacer bc0, BarcodeAndSpacer bc1) :
         name(name), barcode({bc0, bc1}) {}
-
-    ~Sample() {
-        bool delete_files = n_reads == 0 && out_r1 && out_r2;
-        delete out_r1;
-        delete out_r2;
-        if (delete_files) {
-            unlink(path1.c_str());
-            unlink(path2.c_str());
-        }
-    }
-
-    bool openFiles(string prefix) {
-        path1 = prefix + name + "_R1.fq.gz";
-        path2 = prefix + name + "_R2.fq.gz";
-        file_descriptor_sink fds1(path1), fds2(path2);
-        out_r1 = new filtering_ostream();
-        out_r1->push(gzip_compressor());
-        out_r1->push(fds1);
-        out_r2 = new filtering_ostream();
-        out_r2->push(gzip_compressor());
-        out_r2->push(fds2);
-        if (fds1.is_open() && fds2.is_open()) {
-            return true;
-        }
-        else {
-            delete out_r1;
-            delete out_r2;
-            out_r1 = out_r2 = nullptr;
-            return false;
-        }
-    }
 
 };
 
@@ -132,31 +102,218 @@ int mismatches(const string& templ, const string& test) {
     return mismatch;
 }
 
-class OutputJob {
-    size_t trim[2];
-    string data[4];
+class Batch {
+    size_t num_in_batch;
+    size_t trim[BATCH_SIZE][2];
+    string data[BATCH_SIZE][4];
 };
 
-class QueueManager {
+class DemultiplexingManager {
 
-    const size_t QUEUE_MAX = 5, QUEUE_FILL_LEVEL = 3;
-    const size_t BATCH_SIZE = 100; // reads
-
-    mutex mastermutex;
-
+    const size_t QUEUE_MAX = 16;
+    const size_t QUEUE_HIGH_LEVEL = 12;
+    //const size_t QUEUE_LOW_LEVEL = 4;
+    //
+    CompressedFastqInput & inputs[2];
     mutex inputmx[2];
-    queue<string[4]> input[2];
-    bool input_busy[2] = {false, false};
+    queue<Batch> inputqs[2];
+    atomic_bool input_busy[2] = {false, false};
+   
+    atomic_bool analysis_busy = false;
+    mutex analysismx;
+    Analysis & analysis;
     
-    vector<queue<OutputJob>> outputs;
+    vector<queue<Batch>> outputqs;
     vector<mutex> outputmx;
 
-    bool finish = false;
+    bool finish = false, error = false;
 
-    void run() {
-        
+    public:
+    DemultiplexingManager(CompressedFastqInputs& inputs[2]) 
+        : inputs(inputs) {
+    }
+
+    void run(int thread_index) {
+        while (!error && !finish) {
+            // Try to start input processing
+            for (int i=0; i<1; ++i) {
+                // Select one of the two input queues, different threads
+                // will try different queues first.
+                int qindex = (i ^ thread_index) & 1;
+                size_t qsize = inputqs[qindex].size();
+                if (qsize < QUEUE_HIGH_LEVEL && 
+                        !input[qindex].eof() &&
+                        !input_busy[qindex]) {
+                    if (runInputFunction(qindex)) continue;
+                }
+            }
+            if (!analysis_busy) {
+                if (runAnalysisFunction()) continue;
+            }
+            
+        }
+    }
+
+    // Calls input function. Returns true if it was executed, false if
+    // there was already an active input job for this queue.
+    bool runInputFunction(int qindex) {
+        size_t queue_fill;
+        {
+            unique_lock lk(inputmx[qindex]);
+            if (input_busy[qindex]) return false;
+            if (inputs[qindex].eof) return false;
+            input_busy[qindex] = true;
+            queue_fill = inputqs[qindex].size();
+        }
+        while (queue_fill < QUEUE_MAX && !inputs[qindex].eof()) {
+            Batch* bat = new Batch;
+            if (inputs[qindex].readBatch(bat)) {
+                {
+                    unique_lock lk(inputmx[qindex]);
+                    inputqs[qindex].push(bat);
+                    queue_fill = inputqs[qindex].size();
+                }
+            }
+            else {
+                cerr << "Error while reading file " << 
+                    input[qindex].path << endl;
+                error = true;
+                return true;
+            }
+        }
+        input_busy[qindex] = false;
+    }
+
+    // Calls analysis function and feeds results into output queues
+    bool runAnalysisFunction() {
+        unique_lock lk(analysismx, try_lock);
+        if (!lk) return false;
+        if (analysis_busy) return false;
+        analysis_busy = true;
+        while (!inputqs[0].empty() && !inputqs[1].empty()) {
+            Batch* b[2];
+            for (int i=0; i<2; ++i) {
+                unique_lock lk2(inputmx[i]);
+                b[i] = inputqs[i].front;
+                inputqs[i].pop();
+            }
+            assert(b[0]->num_in_batch == b[1]->num_in_batch);
+            vector<int> routings = analysis.analyseAndRoute(b);
+            vector<int> addable;
+            for (int i=0; i<outputqs.size(); ++i) {
+                for (int j=0; j<routings.size(); ++j) {
+                    if (routings[j] == i) {
+                        addable.push_back(j);
+                    }
+                }
+            }
+            
+        }
+        analysis_busy = false;
     }
 };
+
+class CompressedFastqInput {
+    filtering_istream input_stream;
+
+    public:
+    string path;
+
+    CompressedFastqInput(const string& path) : path(path) {
+        file_descriptor_source raw(path);
+        input_stream.push(gzip_decompressor());
+        input_stream.push(raw);
+    }
+
+    bool readBatch(Batch* bat) {
+        int i;
+        for (i=0; i<BATCH_SIZE; ++i) {
+            getline(input_stream, bat->data[i][0]);
+            if (input_stream) {
+                for (j=1; j<4; ++j)
+                    getline(input_stream, bat->data[i][j]);
+            }
+            else if (input_stream.eof()) {
+                break;
+            }
+            else {
+                return false;
+            }
+        }
+        bat->num_in_batch = i;
+        return true;
+    }
+    
+    bool eof() {
+        return input_stream.eof();
+    }
+}
+
+
+class Analysis {
+
+    const vector<Sample>& samples;
+
+    vector<BarcodeAndSpacer> barcode0_list;
+    vector<list<Sample*> > barcode0_sample_list_list;
+
+    public:
+
+    unsigned long undetermined_reads = 0;
+    unsigned long n_total_reads = 0;
+
+
+    Analysis(const vector<Sample>& samples) : samples(samples) {
+        // Make a list to map barcode1 to a list of samples with that barcode1
+        for (Sample& s : samples) {
+            bool found = false;
+            for (int i=0; i<barcode0_list.size(); ++i) {
+                if (s.barcode[0].barcode == barcode0_list[i].barcode) {
+                    found = true;
+                    barcode0_sample_list_list[i].push_back(&s);
+                    break;
+                }
+            }
+            if (!found) {
+                barcode0_list.push_back(s.barcode[0]);
+                barcode0_sample_list_list.push_back(list<Sample*>(1, &s));
+            }
+        }
+    }
+
+    vector<int> analyseAndRouteReads(Batch* bat) {
+        vector<int> result(bat->num_in_batch, -1);
+
+    }
+}
+
+
+class CompressedFastqOutput {
+    filtering_ostream *out_stream = nullptr;
+    string out_path;
+
+    ~CompressedFastqOutput() {
+        delete out_r1;
+    }
+    bool openFile(string path) {
+        file_descriptor_sink fds(path);
+        out_stream = new filtering_ostream();
+        out_stream->push(gzip_compressor());
+        out_stream->push(fds1);
+        if (fds.is_open()) {
+            out_path = path;
+            return true;
+        }
+        else {
+            delete out_stream;
+            out_stream = nullptr;
+            return false;
+        }
+    }
+    void writeBuffers() {
+    }
+}
+
 
 int main(int argc, char* argv[]) {
 
@@ -224,47 +381,36 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Make a list to map barcode1 to a list of samples with that barcode1
-    vector<BarcodeAndSpacer> barcode0_list;
-    vector<list<Sample*> > barcode0_sample_list_list;
-    for (Sample& s : samples) {
-        bool found = false;
-        for (int i=0; i<barcode0_list.size(); ++i) {
-            if (s.barcode[0].barcode == barcode0_list[i].barcode) {
-                found = true;
-                barcode0_sample_list_list[i].push_back(&s);
-                break;
-            }
-        }
-        if (!found) {
-            barcode0_list.push_back(s.barcode[0]);
-            barcode0_sample_list_list.push_back(list<Sample*>(1, &s));
-        }
-    }
-
     // Input files
-    filtering_istream input_r1_ifs, input_r2_ifs;
-    file_descriptor_source r1raw(input_file_r1), r2raw(input_file_r2);
-    input_r1_ifs.push(gzip_decompressor());
-    input_r1_ifs.push(r1raw);
-    input_r2_ifs.push(gzip_decompressor());
-    input_r2_ifs.push(r2raw);
-    istream & input_r1 = input_r1_ifs;
-    istream & input_r2 = input_r2_ifs;
+    CompressedFastqInput input1(input_file_r1), input2(input_file_r2);
     
+    // Output files
+    vector<CompressedFastqOutput> sample_outputs_r1(samples.size());
+    vector<CompressedFastqOutput> sample_outputs_r2(samples.size());
+    CompressedFastqOutput undetermined_output1, undetermined_output2;
+
     // Open output files for all samples
-    for (Sample& sample : samples) {
-        if (!sample.openFiles(output_prefix)) {
-            cerr << "Failed to open output file for sample " << sample.name << endl;
+    for (int i=0; i<samples.size(); ++i) {
+        string path1 = prefix + samples[i].name + "_R1.fq.gz";
+        string path2 = prefix + samples[i].name + "_R2.fq.gz";
+
+        if (!sample_outputs_r1.openFile(path)) {
+            cerr << "Failed to open output file " << path << " for sample "
+                 << sample.name << endl;
+            exit(1);
+        }
+        if (!sample_outputs_r2.openFile(path)) {
+            cerr << "Failed to open output file " << path << " for sample "
+                 << sample.name << endl;
             exit(1);
         }
     }
     // and Undetermined
-    filtering_ostream und_r1, und_r2;
-    und_r1.push(gzip_compressor());
-    und_r1.push(file_descriptor_sink(output_prefix + "Undetermined_R1.fq.gz"));
-    und_r2.push(gzip_compressor());
-    und_r2.push(file_descriptor_sink(output_prefix + "Undetermined_R2.fq.gz"));
+    if (! (undetermined_output1.openFile(output_prefix + "Undetermined_R1.fq.gz") && 
+            undetermined_output2.openFile(output_prefix + "Undetermined_R2.fq.gz"))) {
+        cerr << "Failed to open undetermined files." << endl;
+        exit(1);
+    }
 
     // Print information on startup
     cerr.precision(2);
@@ -278,9 +424,7 @@ int main(int argc, char* argv[]) {
 
     // Buffer for 1 FASTQ record (4 lines) from each file R1 and R2
     string data[2][4];
-    unsigned long undetermined_reads = 0;
     int i;
-    unsigned long n_total_reads = 0;
     while (input_r1 && input_r2 /* && n_total_reads < 1 */) {
 
         // Read one record from each FQ
@@ -382,6 +526,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     else {
+            bool delete_files = n_reads == 0 && out_r1 && out_r2;
+            if (delete_files) {
+                unlink(path1.c_str());
+                unlink(path2.c_str());
+            }
         cerr << "\nCompleted demultiplexing " << n_total_reads << " PE reads.\n" << endl;
         cout << "SAMPLE_NAME\tNUM_READS\tPCT_READS\tPCT_PERFECT_BARCODE\tPCT_SPACER_FAIL\n";
         cout << "---------------------------------------------------------------\n";
