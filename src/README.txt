@@ -8,10 +8,20 @@ sequences.
 
 # Usage 
 
-     triple_index-demultiplexing/src/demultiplexer_long BARCODE_FILE SAMPLE_SHEET \
-                INPUT_R1 INPUT_R2 OUTPUT_PREFIX \
-                 [BARCODE_MISMATCHES_PER_READ=L1 \
-                 [ALIGNMENT_MISMATCHES=BARCODE_MISMATCHES_PER_READ]]
+     ./demultiplexer \
+         BARCODE_FILE SAMPLE_SHEET \
+         INPUT_FILE_R1 INPUT_FILE_R2 \
+         OUTPUT_PREFIX
+    
+    Allowed options:
+      -b [ --barcode-mismatches ] arg (=1)  Allowed mismatches in barcode.
+      -a [ --alignment-mismatches ] arg (=-1)
+                                            Allowed mismatches in alignment
+                                            (default=barcode-mismatches).
+      -H [ --use-hamming ]                  Use Hamming distance instead of
+                                            Levenshtein distance.
+      -t [ --threads ] arg (=16)            Number of threads to use.
+      -h [ --help ]                         Show this help message.
 
 
 ## options
@@ -73,16 +83,18 @@ Example `SAMPLE_SHEET`:
     with filenames equal to the sample names (the slash at the end is required in order
     to specify a directory.
 
-  * `BARCODE_MISMATCHES_PER_READ`: Number of mismatches to allow when assigning reads to
-    samples. If the number is prefixed by "L", e.g. L1, the Levenshtein distance is used.
-    If just a number is given, the Hamming distance is used -- no insertions or deletions
-    are allowed. Note that the barcodes are not checked for uniqueness. If you specify a
+  * `barcode-mismatches`: Number of mismatches to allow when assigning reads to
+    samples. Note that the barcodes are not checked for uniqueness. If you specify a
     too large `BARCODE_MISMATCHES_PER_READ`, the assignment to samples may be ambigous,
     and the end result is undefined (the reads are usually assigned to the first sample
-    in the list that matches). The default value is L1, i.e. to use Levenshtein distance
+    in the list that matches). The default value is 1, i.e. to use Levenshtein distance
     with one edit operation allowed.
 
-  * `ALIGNMENT_MISMATCHES`: Controls the pairwise alignment of the barcode+spacer sequence
+  * `use-hamming`: Use the Hamming distance instead of Levenshtein distance. The Hamming
+    distance considers only substitutions, not insertions or deletions. It is a more strict
+    matching criterion. It is also somewhat faster to compute.
+
+  * `alignment-mismatches`: Controls the pairwise alignment of the barcode+spacer sequence
     to the read, for the purpose of trimming. The number of edit operations allowed to match
     the read to the expected sequence. The solution with the fewest edit operations is always
     chosen, and if there are multiple solutions, the shortest match is chosen. If the combined

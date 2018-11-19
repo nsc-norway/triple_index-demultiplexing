@@ -15,11 +15,14 @@
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/program_options.hpp>
 
 const size_t BATCH_SIZE = 1024; // reads
 
 using namespace std;
 using namespace boost::iostreams;
+namespace po = boost::program_options;
+
 #include "bounded_levenshtein_distance.cpp"
 
 // General data classes for barcode and sample
@@ -577,42 +580,83 @@ void getSamples(vector<Sample>& samples, const vector<BarcodeAndSpacer>& barcode
 
 int main(int argc, char* argv[]) {
 
-    if (argc < 6) {
-        cerr << "usage:\n " << argv[0]
-             << " BARCODE_FILE SAMPLE_SHEET INPUT_R1 INPUT_R2 OUTPUT_PREFIX \\\n"
-             << "             [BARCODE_MISMATCHES_PER_READ=L1 \\\n"
-             << "             [ALIGNMENT_MISMATCHES=BARCODE_MISMATCHES_PER_READ]]" << endl;
-        return 1;
-    }
+    const string usage =
+                "usage:\n " + string(argv[0]) + " \\\n"
+                "     BARCODE_FILE SAMPLE_SHEET \\\n" + 
+                "     INPUT_FILE_R1 INPUT_FILE_R2 \\\n" + 
+                "     OUTPUT_PREFIX \n\n";
 
-    // First parse options: most are strings, except the mismatch parameters
-    const string    barcode_file(argv[1]), sample_sheet(argv[2]),
-                    input_file_r1(argv[3]), input_file_r2(argv[4]),
-                    output_prefix(argv[5]);
 
-    // Barcode mismatches can be either Ln for Levenshtein distance n, or n
-    // for Hamming distance n.
-    unsigned int barcode_mismatches = 1, alignment_mismatches;
-    bool use_levens = true;
-    if (argc >= 7) {
-        if (argv[6][0] == 'L' || argv[6][0] == 'l') {
-            barcode_mismatches = stoul(argv[6]+1);
-            use_levens = barcode_mismatches > 0;
+    // Parse command line into these variables
+    string    barcode_file, sample_sheet,
+              input_file_r1, input_file_r2,
+              output_prefix;
+    unsigned int barcode_mismatches, num_threads;
+    int alignment_mismatches;
+    bool use_hamming;
+
+    unsigned int cores = thread::hardware_concurrency();
+
+    po::options_description visible("Allowed options");
+    visible.add_options()
+        ("barcode-mismatches,b", po::value<unsigned int>(&barcode_mismatches)->default_value(1),
+            "Allowed mismatches in barcode.")
+        ("alignment-mismatches,a", po::value<int>(&alignment_mismatches)->default_value(-1),
+            "Allowed mismatches in alignment (default=barcode-mismatches).")
+        ("use-hamming,H", po::bool_switch(&use_hamming),
+            "Use Hamming distance instead of Levenshtein distance.")
+        ("threads,t", po::value<unsigned int>(&num_threads)->default_value(min(cores, 16u)),
+            "Number of threads to use.")
+        ("help,h", "Show this help message.")
+    ;
+    po::options_description positionals("Positional options(hidden)");
+    positionals.add_options()
+        ("BARCODE_FILE", po::value<string>(&barcode_file)->required(),
+            "Barcode definition file")
+        ("SAMPLE_SHEET", po::value<string>(&sample_sheet)->required(),
+            "Sample sheet")
+        ("INPUT_FILE_R1", po::value<string>(&input_file_r1)->required(),
+            "Input file read 1")
+        ("INPUT_FILE_R2", po::value<string>(&input_file_r2)->required(),
+            "Input file read 2")
+        ("OUTPUT_PREFIX", po::value<string>(&output_prefix)->required(),
+            "Output prefix (for directory, use a trailing slash).")
+    ;
+    po::options_description all_options("Allowed options");
+    all_options.add(visible);
+    all_options.add(positionals);
+
+    po::positional_options_description pos_desc;
+    pos_desc.add("BARCODE_FILE", 1);
+    pos_desc.add("SAMPLE_SHEET", 1);;
+    pos_desc.add("INPUT_FILE_R1", 1);
+    pos_desc.add("INPUT_FILE_R2", 1);
+    pos_desc.add("OUTPUT_PREFIX", 1);
+
+    po::variables_map vm;
+    try {
+        po::store(
+                po::command_line_parser(argc, argv).options(all_options).positional(pos_desc).run(),
+                vm
+                );
+        if (vm.count("help") > 0) {
+            cerr << usage << visible << endl;
+            return 0;
         }
         else {
-            barcode_mismatches = stoul(argv[6]);
-            use_levens = false;
+            po::notify(vm);
         }
     }
-    // Alignment distance can optionally be set higher than barcode mismatch,
-    // to allow the alignment of more errors in spacer sequences.
-    if (argc >= 8) {
-        alignment_mismatches = stoul(argv[7]);
+    catch(po::error& e) 
+    { 
+      cerr << "ERROR: " << e.what() << "\n\n";
+      cerr << usage << visible << endl; 
+      return 1; 
     }
-    else {
-        alignment_mismatches = barcode_mismatches;
-    }
-    
+
+    bool use_levens = !use_hamming;
+    if (alignment_mismatches == -1) alignment_mismatches = barcode_mismatches;
+
     // Read named barcodes from a single tab-separated file. This file should also
     // contain the heterogeneity spacer sequences.
     vector<BarcodeAndSpacer> barcodes = getBarcodesAndSpacers(barcode_file);
@@ -686,7 +730,7 @@ int main(int argc, char* argv[]) {
     cerr << '\n' << endl;
 
     Analysis analysis(samples, bclen, use_levens, barcode_mismatches, alignment_mismatches);
-    DemultiplexingManager manager(16, inputs, analysis, sample_outputs);
+    DemultiplexingManager manager(num_threads, inputs, analysis, sample_outputs);
     bool success = manager.execute();
 
     if (!success) { // The Manager will print an error message
