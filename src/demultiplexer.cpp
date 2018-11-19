@@ -195,7 +195,6 @@ class Analysis {
 
         vector<AnalysisResult> results(bat[0]->num_in_batch);
 
-        cout << "debug running analysis of a batch with " << bat[0]->num_in_batch << " reads" << endl;
         for (int idata=0; idata < bat[0]->num_in_batch; ++idata) {
             bool undetermined = true;
             if (bat[0]->data[idata][1].length() >= bclen[0] && bat[1]->data[idata][1].length() >= bclen[1]) {
@@ -262,7 +261,7 @@ class Analysis {
                 results[idata].trim[0] = 0;
                 results[idata].trim[1] = 0;
             }
-            if (++n_total_reads % 10000 == 0) {
+            if (++n_total_reads % 1000000 == 0) {
                 cerr << "Processed " << n_total_reads << " reads. Undetermined: "
                      << (undetermined_reads * 100.0 / n_total_reads) << " %."<< endl;
             }
@@ -276,7 +275,7 @@ class DemultiplexingManager {
 
     const size_t QUEUE_MAX = 16;
     const size_t QUEUE_HIGH_LEVEL = 12;
-    const size_t OUTPUT_QUEUE_MAX = 4096;
+    const size_t OUTPUT_QUEUE_MAX = 8192;
 
     const size_t n_thread;
  
@@ -320,11 +319,13 @@ class DemultiplexingManager {
     // the analysis is complete.
     bool execute() {
         int i;
-        //vector <thread> workers;
-        //for (i=0; i<n_thread-1; ++i) {
-        //    workers.emplace_back(thread(run, i));
-        //}
+        vector <thread> workers;
+        for (i=1; i<n_thread; ++i) {
+            workers.emplace_back(thread(&DemultiplexingManager::run, this, i));
+        }
         run(0);
+        for (thread& t : workers) t.join();
+        return !error;
     }
 
     // Main thread function is a loop that continues until all data have been processed.
@@ -333,8 +334,9 @@ class DemultiplexingManager {
     void run(int thread_index) {
         bool finish_local = false;
         while (!error && !finish_local) {
+            bool inputed = false;
             // Try to start input processing
-            for (int i=0; i<2; ++i) {
+            for (int i=0; i<2 && !inputed; ++i) {
                 // Select one of the two input queues, different threads
                 // will try different queues first.
                 int qindex = (i ^ thread_index) & 1;
@@ -342,28 +344,28 @@ class DemultiplexingManager {
                 if (qsize < QUEUE_HIGH_LEVEL && 
                         !inputs[qindex].eof() &&
                         !input_busy[qindex]) {
-                    if (runInputFunction(qindex)) continue;
+                    inputed = runInputFunction(qindex);
                 }
             }
+            if (inputed) continue;
             size_t output_max = 0;
             for (auto& q : outputqs) output_max = max(q.size(), output_max);
             if (!analysis_busy && output_max < OUTPUT_QUEUE_MAX) {
                 if (runAnalysisFunction()) continue;
             }
 
-            cout << "debug no analysis function to run now, going to output!" << endl;
-
-            for (int i=0; i<noutqs; ++i) {
+            bool outputed = false;
+            for (int i=0; i<noutqs && !outputed; ++i) {
                 // Use different starting point for each thread
                 int qindex = (i + thread_index*(noutqs / n_thread)) % noutqs;
                 if (!outputqs[qindex].empty()) {
-                    if (runOutputFunction(qindex)) continue;
+                    outputed = runOutputFunction(qindex);
                 }
             }
+            if (outputed) continue;
 
             // We havent 'continue'd in the above code: it means there was nothing to do!
             // Either we are done, or there is not enough parallel tasks available at this point.
-            cout << "debug Hit the end of task selection loop, nothing to do now?" << endl;
  
             // Check if this is really the end: Is the analysis complete?
             // Set finish_local, or if any check fails, we will go another round.
@@ -373,7 +375,7 @@ class DemultiplexingManager {
                     unique_lock<mutex> lk0(inputmx[0]);
                     unique_lock<mutex> lk1(inputmx[1]);
                     unique_lock<mutex> lk2(analysismx);
-                    bool any_input_busy = false, empty = false;
+                    bool any_input_busy = false, empty = true;
                     for (int i=0; i<2; ++i) {
                         empty = empty && inputqs[i].empty(); 
                         any_input_busy = any_input_busy || input_busy[i];
@@ -397,7 +399,7 @@ class DemultiplexingManager {
             }
             if (!error) { // There appears to be more tasks to do. Wait until the signal or timeout.
                 unique_lock<mutex> lk(any_work_mutex);
-                cv_any_work.wait_for(lk, std::chrono::seconds(1));
+                cv_any_work.wait_for(lk, std::chrono::seconds(5));
             }
         }
     }
@@ -405,7 +407,6 @@ class DemultiplexingManager {
     // Calls input function. Returns true if it was executed, false if
     // there was already an active input job for this queue.
     bool runInputFunction(int qindex) {
-        cout << "debug running input function" << endl;
         size_t queue_fill;
         {
             unique_lock<mutex> lk(inputmx[qindex]);
@@ -438,7 +439,6 @@ class DemultiplexingManager {
         if (!lk) return false;
         if (analysis_busy) return false;
         analysis_busy = true;
-        cout << "debug running analysis " << endl;
         while (!inputqs[0].empty() && !inputqs[1].empty()) {
             std::array<Batch*, 2> b;
             for (int i=0; i<2; ++i) {
@@ -452,7 +452,6 @@ class DemultiplexingManager {
             delete b[0];
             delete b[1];
         }
-        cout << "debug completed analysis function" << endl;
         analysis_busy = false;
         notifyNewWork(true); // Notify all -- there may be many output jobs, and input jobs
     }
@@ -494,6 +493,7 @@ class DemultiplexingManager {
         notifyNewWork(false); // Notify one possible analysis job available
                               // (in case of output queue limit)
         getoutput(qindex).writeBuffers(jobs);
+        return true;
     }
 
     void notifyNewWork(bool all) {
@@ -686,7 +686,7 @@ int main(int argc, char* argv[]) {
     cerr << '\n' << endl;
 
     Analysis analysis(samples, bclen, use_levens, barcode_mismatches, alignment_mismatches);
-    DemultiplexingManager manager(4, inputs, analysis, sample_outputs);
+    DemultiplexingManager manager(16, inputs, analysis, sample_outputs);
     bool success = manager.execute();
 
     if (!success) { // The Manager will print an error message
