@@ -602,7 +602,7 @@ int main(int argc, char* argv[]) {
         ("barcode-mismatches,b", po::value<unsigned int>(&barcode_mismatches)->default_value(1),
             "Allowed mismatches in barcode.")
         ("alignment-mismatches,a", po::value<int>(&alignment_mismatches)->default_value(-1),
-            "Allowed mismatches in alignment (default=barcode-mismatches).")
+            "Allowed mismatches in alignment (default=barcode-mismatches+1).")
         ("use-hamming,H", po::bool_switch(&use_hamming),
             "Use Hamming distance instead of Levenshtein distance.")
         ("threads,t", po::value<unsigned int>(&num_threads)->default_value(min(cores, 16u)),
@@ -655,7 +655,7 @@ int main(int argc, char* argv[]) {
     }
 
     bool use_levens = !use_hamming;
-    if (alignment_mismatches == -1) alignment_mismatches = barcode_mismatches;
+    if (alignment_mismatches == -1) alignment_mismatches = barcode_mismatches + 1;
 
     // Read named barcodes from a single tab-separated file. This file should also
     // contain the heterogeneity spacer sequences.
@@ -720,7 +720,8 @@ int main(int argc, char* argv[]) {
     }
 
     // Print information on startup
-    cerr.precision(2);
+    cerr.precision(1);
+    cerr << fixed;
     cerr << "\nDemultiplexing " << samples.size() << " samples...\n\n";
     cerr << " Allowed barcode mismatches: " << barcode_mismatches << '\n';
     cerr << " String distance:            ";
@@ -750,8 +751,8 @@ int main(int argc, char* argv[]) {
         cout << "---------------------------------------------------------------\n";
         for (Sample& sample : samples) {
             cout.precision(2);
+            cout << fixed;
             cout << sample.name << '\t' << sample.n_reads << '\t'
-                << fixed
                 << sample.n_reads * 100.0 / max(analysis.n_total_reads, 1ul) << '\t'
                 << sample.n_perfect_barcode * 100.0 / max(sample.n_reads, 1ul) << '\t'
                 << sample.n_spacer_fail * 50.0 / max(sample.n_reads, 1ul)

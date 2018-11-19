@@ -17,7 +17,7 @@ sequences.
       -b [ --barcode-mismatches ] arg (=1)  Allowed mismatches in barcode.
       -a [ --alignment-mismatches ] arg (=-1)
                                             Allowed mismatches in alignment
-                                            (default=barcode-mismatches).
+                                            (default=barcode-mismatches+1).
       -H [ --use-hamming ]                  Use Hamming distance instead of
                                             Levenshtein distance.
       -t [ --threads ] arg (=16)            Number of threads to use.
@@ -74,7 +74,7 @@ Example `SAMPLE_SHEET`:
     Sample11 f2 r7
 
 
-  * `INPUT_R1` and `INPUT_R2`: Data files with inline barcodes and spacer sequences intact.
+  * `INPUT_FILE_R1` and `INPUT_FILE_R2`: Data files with inline barcodes and spacer sequences intact.
     Paired-end data is required, and the files must be gzip'ed FASTQ format.
 
   * `OUTPUT_PREFIX`: The output filename for each sample is constructed as:
@@ -83,12 +83,11 @@ Example `SAMPLE_SHEET`:
     with filenames equal to the sample names (the slash at the end is required in order
     to specify a directory.
 
-  * `barcode-mismatches`: Number of mismatches to allow when assigning reads to
-    samples. Note that the barcodes are not checked for uniqueness. If you specify a
-    too large `BARCODE_MISMATCHES_PER_READ`, the assignment to samples may be ambigous,
+  * `barcode-mismatches`: Number of mismatches to allow, per read (R1/R2), when assigning
+    reads to samples. Note that the barcodes are not checked for uniqueness. If you specify
+    a too large `barcode-mismatches`, the assignment to samples may be ambigous,
     and the end result is undefined (the reads are usually assigned to the first sample
-    in the list that matches). The default value is 1, i.e. to use Levenshtein distance
-    with one edit operation allowed.
+    in the list that matches). The default value is 1.
 
   * `use-hamming`: Use the Hamming distance instead of Levenshtein distance. The Hamming
     distance considers only substitutions, not insertions or deletions. It is a more strict
@@ -101,8 +100,8 @@ Example `SAMPLE_SHEET`:
     sequence does not match within this threshold, the true barcode and spacer length is trimmed.
     This parameter is ignored if the Hamming distance is used for mismatches -- then the true
     length of the barcode+spacer is always trimmed. As the alignment and mismatch counting is
-    done in one operation, the value of `ALIGNMENT_MISMATCHES` should always be greater or
-    equal to `BARCODE_MISMATCHES_PER_READ`.
+    done in one operation, the value of `alignment-mismatches` should always be greater or
+    equal to `barcode-mismatches`. The default value is `barcode-mismatches + 1`.
 
 
 ## output
