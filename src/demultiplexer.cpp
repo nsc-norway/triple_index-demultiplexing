@@ -74,7 +74,7 @@ class CompressedFastqInput {
         int i;
         for (i=0; i<BATCH_SIZE; ++i) {
             getline(*input_stream, bat->data[i][0]);
-            if (input_stream) {
+            if (input_stream->good()) {
                 for (int j=1; j<4; ++j)
                     getline(*input_stream, bat->data[i][j]);
             }
