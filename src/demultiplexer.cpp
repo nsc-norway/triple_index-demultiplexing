@@ -581,7 +581,7 @@ void getSamples(vector<Sample>& samples, const vector<BarcodeAndSpacer>& barcode
 int main(int argc, char* argv[]) {
 
     const string usage =
-                "usage:\n " + string(argv[0]) + " \\\n"
+                "usage:\n " + string(argv[0]) + " [options] \\\n"
                 "     BARCODE_FILE SAMPLE_SHEET \\\n" + 
                 "     INPUT_FILE_R1 INPUT_FILE_R2 \\\n" + 
                 "     OUTPUT_PREFIX \n\n";

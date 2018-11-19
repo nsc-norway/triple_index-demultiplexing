@@ -8,7 +8,7 @@ sequences.
 
 # Usage 
 
-     ./demultiplexer \
+     ./demultiplexer [options] \
          BARCODE_FILE SAMPLE_SHEET \
          INPUT_FILE_R1 INPUT_FILE_R2 \
          OUTPUT_PREFIX
