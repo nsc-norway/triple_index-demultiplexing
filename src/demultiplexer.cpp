@@ -21,6 +21,8 @@ const size_t BATCH_SIZE = 8192; // reads to input, analyse
 const size_t QUEUE_MAX = 16;        // number of batches in input queue
 const size_t QUEUE_HIGH_LEVEL = 12; // max number of batch before running input
 const size_t OUTPUT_QUEUE_SUM = 65535; // max read in ouput queues
+const std::streamsize GZIP_INPUT_BUFFER_SIZE = 16*1024;
+const std::streamsize GZIP_OUTPUT_BUFFER_SIZE = 4*1024;
 
 using namespace std;
 using namespace boost::iostreams;
@@ -65,12 +67,13 @@ class CompressedFastqInput {
 
     public:
     string path;
-    streamsize input_sizes[4] = {1};
+    size_t input_sizes[4] = {1};
 
     CompressedFastqInput(const string& path) : path(path) {
         input_stream.reset(new filtering_istream);
         file_descriptor_source raw(path);
-        input_stream->push(gzip_decompressor());
+        // Construct with buffer size. 15 is the default value of the first parameter.
+        input_stream->push(gzip_decompressor(15, GZIP_INPUT_BUFFER_SIZE));
         input_stream->push(raw);
     }
 
@@ -79,11 +82,11 @@ class CompressedFastqInput {
         for (i=0; i<BATCH_SIZE; ++i) {
             for (int j=0; j<4; ++j) bat->data[i][j].reserve(input_sizes[j]);
             getline(*input_stream, bat->data[i][0]);
-            input_sizes[0] = max(input_sizes[0], input_stream->gcount());
+            input_sizes[0] = max(input_sizes[0], bat->data[i][0].capacity());
             if (input_stream->good()) {
                 for (int j=1; j<4; ++j) {
                     getline(*input_stream, bat->data[i][j]);
-                    input_sizes[j] = max(input_sizes[j], input_stream->gcount());
+                    input_sizes[j] = max(input_sizes[j], bat->data[i][j].capacity());
                 }
             }
             else if (input_stream->eof()) {
@@ -120,7 +123,7 @@ class CompressedFastqOutput {
     bool openFile(string path) {
         out_stream.reset(new filtering_ostream);
         file_descriptor_sink fds(path);
-        out_stream->push(gzip_compressor());
+        out_stream->push(gzip_compressor(zlib::default_compression, GZIP_OUTPUT_BUFFER_SIZE));
         out_stream->push(fds);
         if (fds.is_open()) {
             out_path = path;
@@ -327,10 +330,10 @@ class DemultiplexingManager {
     bool execute() {
         int i;
         vector <thread> workers;
-        for (i=1; i<n_thread; ++i) {
+        for (i=0; i<n_thread; ++i) {
             workers.emplace_back(thread(&DemultiplexingManager::run, this, i));
         }
-        run(0);
+        //run(0);
         for (thread& t : workers) t.join();
         return !error;
     }
