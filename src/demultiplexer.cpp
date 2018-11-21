@@ -17,7 +17,10 @@
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/program_options.hpp>
 
-const size_t BATCH_SIZE = 1024; // reads
+const size_t BATCH_SIZE = 8192; // reads to input, analyse
+const size_t QUEUE_MAX = 16;        // number of batches in input queue
+const size_t QUEUE_HIGH_LEVEL = 12; // max number of batch before running input
+const size_t OUTPUT_QUEUE_SUM = 65535; // max read in ouput queues
 
 using namespace std;
 using namespace boost::iostreams;
@@ -62,6 +65,7 @@ class CompressedFastqInput {
 
     public:
     string path;
+    streamsize input_sizes[4] = {1};
 
     CompressedFastqInput(const string& path) : path(path) {
         input_stream.reset(new filtering_istream);
@@ -73,10 +77,14 @@ class CompressedFastqInput {
     bool readBatch(Batch* bat) {
         int i;
         for (i=0; i<BATCH_SIZE; ++i) {
+            for (int j=0; j<4; ++j) bat->data[i][j].reserve(input_sizes[j]);
             getline(*input_stream, bat->data[i][0]);
+            input_sizes[0] = max(input_sizes[0], input_stream->gcount());
             if (input_stream->good()) {
-                for (int j=1; j<4; ++j)
+                for (int j=1; j<4; ++j) {
                     getline(*input_stream, bat->data[i][j]);
+                    input_sizes[j] = max(input_sizes[j], input_stream->gcount());
+                }
             }
             else if (input_stream->eof()) {
                 break;
@@ -123,14 +131,12 @@ class CompressedFastqOutput {
         }
     }
 
-    void writeBuffers(queue<OutputJob>& outputs) {
-        while (!outputs.empty()) {
-           OutputJob& output = outputs.front();
-           (*out_stream) << output.data[0] << '\n';
-           (*out_stream) << output.data[1].substr(output.trim) << '\n';
-           (*out_stream) << output.data[2] << '\n';
-           (*out_stream) << output.data[3].substr(output.trim) << '\n';
-           outputs.pop();
+    void writeBuffers(vector<OutputJob>& outputs) {
+        for(OutputJob & output : outputs) {
+            (*out_stream) << output.data[0] << '\n';
+            (*out_stream) << output.data[1].substr(output.trim) << '\n';
+            (*out_stream) << output.data[2] << '\n';
+            (*out_stream) << output.data[3].substr(output.trim) << '\n';
         }
     }
 };
@@ -276,10 +282,6 @@ class Analysis {
 
 class DemultiplexingManager {
 
-    const size_t QUEUE_MAX = 16;
-    const size_t QUEUE_HIGH_LEVEL = 12;
-    const size_t OUTPUT_QUEUE_MAX = 8192;
-
     const size_t n_thread;
  
     std::array<CompressedFastqInput, 2>& inputs;
@@ -293,13 +295,14 @@ class DemultiplexingManager {
     
     std::array<vector<CompressedFastqOutput>, 2> outputs;
     const size_t noutqs, ngsamples; // ngsamples=number of generalised samples, includes undetermined
-    vector<queue<OutputJob>> outputqs;
+    vector<vector<OutputJob>> outputqs;
     vector<mutex> outputqmx, outputmx;
 
     mutex any_work_mutex;
     condition_variable cv_any_work;
 
     atomic_bool error;
+    atomic_size_t n_outputs_queued;
 
     public:
     DemultiplexingManager(size_t n_thread,
@@ -315,6 +318,7 @@ class DemultiplexingManager {
          input_busy[1] = false;
          analysis_busy = false;
          error = false;
+         n_outputs_queued = 0;
     }
 
     // Spawns threads and runs the demultiplexing. The current thread is used as one of
@@ -352,8 +356,7 @@ class DemultiplexingManager {
             }
             if (inputed) continue;
             size_t output_max = 0;
-            for (auto& q : outputqs) output_max = max(q.size(), output_max);
-            if (!analysis_busy && output_max < OUTPUT_QUEUE_MAX) {
+            if (!analysis_busy && n_outputs_queued < OUTPUT_QUEUE_SUM) {
                 if (runAnalysisFunction()) continue;
             }
 
@@ -426,8 +429,7 @@ class DemultiplexingManager {
                 queue_fill = inputqs[qindex].size();
             }
             else {
-                cerr << "Error while reading file " << 
-                    inputs[qindex].path << endl;
+                cerr << "Error while reading file " << inputs[qindex].path << endl;
                 error = true;
                 return true;
             }
@@ -474,25 +476,28 @@ class DemultiplexingManager {
                     unique_lock<mutex> lk(getqmutex(read, i));
                     for (int result_index : addable[i]) {
                         // Move the data buffer for this read (0/1) into the queue for i
-                        getq(read, i).push(OutputJob(
+                        getq(read, i).emplace_back(
                                     results[result_index].trim[read], 
                                     move(b[read]->data[result_index])
-                                    ));
+                                    );
                     }
                 }
             }
         }
+        n_outputs_queued.fetch_add((size_t)(results.size()*2));
     }
 
     bool runOutputFunction(int qindex) {
         unique_lock<mutex> lk(outputmx[qindex], try_to_lock);
         if (!lk) return false;
-        queue<OutputJob> jobs;
+        vector<OutputJob> jobs;
         {
             unique_lock<mutex> lk2(outputqmx[qindex]);
             if (outputqs[qindex].empty()) return false;
+            jobs.reserve(outputqs[qindex].capacity());
             swap(jobs, outputqs[qindex]);
         }
+        n_outputs_queued.fetch_sub((size_t)jobs.size());
         notifyNewWork(false); // Notify one possible analysis job available
                               // (in case of output queue limit)
         getoutput(qindex).writeBuffers(jobs);
@@ -508,7 +513,7 @@ class DemultiplexingManager {
     // Functions to map between
     //  - one-dimensional array of output buffers
     //  - two dimensional representation with read 0/1 and sample index
-    queue<OutputJob>& getq(int read, int sample) {
+    vector<OutputJob>& getq(int read, int sample) {
         return outputqs[sample + read * ngsamples];
     }
 
