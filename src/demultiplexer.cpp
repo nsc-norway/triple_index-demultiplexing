@@ -403,7 +403,10 @@ class DemultiplexingManager {
                         unique_lock<mutex> lk(outputqmx[i]);
                         all_empty = all_empty && outputqs[i].empty();
                     }
-                    if (all_empty) finish_local = true;
+                    if (all_empty) {
+                        finish_local = true;
+                        notifyNewWork(true);
+                    }
                 }
             }
             if (!error) { // There appears to be more tasks to do. Wait until the signal or timeout.
