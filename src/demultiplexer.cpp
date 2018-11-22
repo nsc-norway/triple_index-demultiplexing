@@ -62,19 +62,25 @@ class Batch {
 };
 
 
-class CompressedFastqInput {
-    unique_ptr<filtering_istream> input_stream;
+class FastqInput {
+    unique_ptr<istream> input_stream;
 
     public:
     string path;
     size_t input_sizes[4] = {1};
 
-    CompressedFastqInput(const string& path) : path(path) {
-        input_stream.reset(new filtering_istream);
-        file_descriptor_source raw(path);
-        // Construct with buffer size. 15 is the default value of the first parameter.
-        input_stream->push(gzip_decompressor(15, GZIP_INPUT_BUFFER_SIZE));
-        input_stream->push(raw);
+    FastqInput(const string& path, bool compressed) : path(path) {
+        if (compressed) {
+            filtering_istream* fis = new filtering_istream;
+            input_stream.reset(fis);
+            file_descriptor_source raw(path);
+            // Construct with buffer size. 15 is the default value of the first parameter.
+            fis->push(gzip_decompressor(15, GZIP_INPUT_BUFFER_SIZE));
+            fis->push(raw);
+        }
+        else {
+            input_stream.reset(new ifstream(path, ios::binary));
+        }
     }
 
     bool readBatch(Batch* bat) {
@@ -115,22 +121,26 @@ class OutputJob {
 };
 
 
-class CompressedFastqOutput {
-    shared_ptr<filtering_ostream> out_stream;
-    string out_path;
+class FastqOutput {
+    shared_ptr<ostream> out_stream;
 
     public:
-    bool openFile(string path) {
-        out_stream.reset(new filtering_ostream);
-        file_descriptor_sink fds(path);
-        out_stream->push(gzip_compressor(zlib::default_compression, GZIP_OUTPUT_BUFFER_SIZE));
-        out_stream->push(fds);
-        if (fds.is_open()) {
-            out_path = path;
-            return true;
+    string path;
+
+    bool openFile(string basepath, bool compressed) {
+        if (compressed) {
+            path = basepath + ".fastq.gz";
+            filtering_ostream* fos = new filtering_ostream;
+            out_stream.reset(fos);
+            file_descriptor_sink fds(path);
+            fos->push(gzip_compressor(zlib::default_compression, GZIP_OUTPUT_BUFFER_SIZE));
+            fos->push(fds);
+            return (fds.is_open());
         }
         else {
-            return false;
+            path = basepath + ".fastq";
+            out_stream.reset(new ofstream(path, ios::binary));
+            return out_stream->good();
         }
     }
 
@@ -287,7 +297,7 @@ class DemultiplexingManager {
 
     const size_t n_thread;
  
-    std::array<CompressedFastqInput, 2>& inputs;
+    std::array<FastqInput, 2>& inputs;
     mutex inputmx[2];
     queue<Batch*> inputqs[2];
     atomic_bool input_busy[2];
@@ -296,7 +306,7 @@ class DemultiplexingManager {
     mutex analysismx;
     Analysis & analysis;
     
-    std::array<vector<CompressedFastqOutput>, 2> outputs;
+    std::array<vector<FastqOutput>, 2> outputs;
     const size_t noutqs, ngsamples; // ngsamples=number of generalised samples, includes undetermined
     vector<vector<OutputJob>> outputqs;
     vector<mutex> outputqmx, outputmx;
@@ -309,9 +319,9 @@ class DemultiplexingManager {
 
     public:
     DemultiplexingManager(size_t n_thread,
-                        std::array<CompressedFastqInput, 2>& inputs,
+                        std::array<FastqInput, 2>& inputs,
                         Analysis& analysis,
-                        std::array<vector<CompressedFastqOutput>, 2>& outputs) 
+                        std::array<vector<FastqOutput>, 2>& outputs) 
         : n_thread(n_thread), inputs(inputs), analysis(analysis),
           outputs(outputs), noutqs(outputs[0].size()+outputs[1].size()),
           ngsamples(outputs[0].size()), outputqs(noutqs), outputqmx(noutqs),
@@ -527,7 +537,7 @@ class DemultiplexingManager {
         return outputqmx[sample + read * ngsamples];
     }
 
-    CompressedFastqOutput& getoutput(int qindex) {
+    FastqOutput& getoutput(int qindex) {
         return outputs[qindex / ngsamples][qindex % ngsamples];
     }
 };
@@ -698,35 +708,41 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    bool compressed =
+            input_file_r1.size() > 3 &&
+            input_file_r1.substr(input_file_r1.size() - 3) == ".gz" &&
+            input_file_r2.size() > 3 &&
+            input_file_r2.substr(input_file_r1.size() - 3) == ".gz";
+
     // Input files
-    std::array<CompressedFastqInput, 2> inputs = {
-        CompressedFastqInput(input_file_r1),
-        CompressedFastqInput(input_file_r2)
+    std::array<FastqInput, 2> inputs = {
+        FastqInput(input_file_r1, compressed),
+        FastqInput(input_file_r2, compressed)
     };
 
     size_t n_samples = samples.size();
     
     // Output files -- represent undetermined as the last output stream
-    std::array<vector<CompressedFastqOutput>, 2> sample_outputs = {
-        vector<CompressedFastqOutput>(n_samples+1),
-        vector<CompressedFastqOutput>(n_samples+1)
+    std::array<vector<FastqOutput>, 2> sample_outputs = {
+        vector<FastqOutput>(n_samples+1),
+        vector<FastqOutput>(n_samples+1)
     };
 
     // Open output files for all samples
     for (int i=0; i<n_samples; ++i) {
         for (int read=0; read<2; ++read) {
-            string path = output_prefix + samples[i].name + "_R" + to_string(read+1) + ".fq.gz";
-            if (!sample_outputs[read][i].openFile(path)) {
-                cerr << "Failed to open output file " << path << " for sample "
-                     << samples[i].name << endl;
+            string basepath = output_prefix + samples[i].name + "_R" + to_string(read+1);
+            if (!sample_outputs[read][i].openFile(basepath, compressed)) {
+                cerr << "Failed to open output file " << sample_outputs[read][i].path
+                     << " for sample " << samples[i].name << endl;
                 exit(1);
             }
         }
     }
     // and Undetermined
-    if (! (sample_outputs[0][n_samples].openFile(output_prefix + "Undetermined_R1.fq.gz") && 
-            sample_outputs[1][n_samples].openFile(output_prefix + "Undetermined_R2.fq.gz"))) {
-        cerr << "Failed to open undetermined files." << endl;
+    if (! (sample_outputs[0][n_samples].openFile(output_prefix + "Undetermined_R1", compressed) && 
+            sample_outputs[1][n_samples].openFile(output_prefix + "Undetermined_R2", compressed))) {
+        cerr << "Failed to open output files for undetermined reads." << endl;
         exit(1);
     }
 
@@ -738,8 +754,10 @@ int main(int argc, char* argv[]) {
     cerr << " String distance:            ";
     if (use_levens) cerr << "Levenshtein" << '\n';
     else            cerr << "Hamming" << '\n';
-    cerr << " Alignment string distance:  " << alignment_mismatches;
-    cerr << '\n' << endl;
+    cerr << " Alignment string distance:  " << alignment_mismatches << '\n';
+    cerr << " Input/output compression:   " << (compressed ? "gzip" : "off") << '\n';
+    cerr << " Threads:                    " << num_threads << '\n';
+    cerr << endl;
 
     Analysis analysis(samples, bclen, use_levens, barcode_mismatches, alignment_mismatches);
     DemultiplexingManager manager(num_threads, inputs, analysis, sample_outputs);
@@ -750,11 +768,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     else {
-        for (Sample sample : samples) { // Deletes empty files, would be corrupted gzip files.
-            bool delete_files = sample.n_reads == 0;
+        for (int i=0; i<samples.size(); ++i) { // Deletes empty files, would be corrupted gzip files.
+            bool delete_files = samples[i].n_reads == 0;
             if (delete_files) {
-                unlink(sample.path1.c_str());
-                unlink(sample.path2.c_str());
+                unlink(sample_outputs[0][i].path.c_str());
+                unlink(sample_outputs[1][i].path.c_str());
             }
         }
         cerr << "\nCompleted demultiplexing " << analysis.n_total_reads << " PE reads.\n" << endl;
