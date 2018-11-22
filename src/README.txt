@@ -96,7 +96,7 @@ Example `SAMPLE_SHEET`:
   * `alignment-mismatches`: Controls the pairwise alignment of the barcode+spacer sequence
     to the read, for the purpose of trimming. The number of edit operations allowed to match
     the read to the expected sequence. The solution with the fewest edit operations is always
-    chosen, and if there are multiple solutions, the shortest match is chosen. If the combined
+    chosen, and if there are multiple solutions, the longest match is chosen. If the combined
     sequence does not match within this threshold, the true barcode and spacer length is trimmed.
     This parameter is ignored if the Hamming distance is used for mismatches -- then the true
     length of the barcode+spacer is always trimmed. As the alignment and mismatch counting is
