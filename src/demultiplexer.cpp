@@ -618,6 +618,8 @@ int main(int argc, char* argv[]) {
 
     unsigned int cores = thread::hardware_concurrency();
 
+    cerr << "\ndemultiplexer " << VERSION << "\n" << endl;
+
     po::options_description visible("Allowed options");
     visible.add_options()
         ("barcode-mismatches,b", po::value<unsigned int>(&barcode_mismatches)->default_value(1),
