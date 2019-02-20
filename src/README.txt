@@ -114,6 +114,10 @@ A summary is written to standard output after completion, with the following col
 
   * `SAMPLE_NAME`: As appears in the sample sheet. Undetermined is below the line.
 
+  * `R1_BC`: The name of the barcode that was used for read 1.
+
+  * `R2_BC`: The name of the barcode that was used for read 2.
+
   * `NUM_READS`: Number of read pairs assigned to this sample.
 
   * `PCT_READS`: The percentage of reads coming from this sample.

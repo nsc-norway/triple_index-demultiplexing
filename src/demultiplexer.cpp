@@ -778,20 +778,20 @@ int main(int argc, char* argv[]) {
             }
         }
         cerr << "\nCompleted demultiplexing " << analysis.n_total_reads << " PE reads.\n" << endl;
-        cout << "SAMPLE_NAME\tNUM_READS\tPCT_READS\tPCT_PERFECT_BARCODE\tPCT_SPACER_FAIL\n";
-        cout << "---------------------------------------------------------------\n";
+        cout << "SAMPLE_NAME\tR1_BC\tR2_BC\tNUM_READS\tPCT_READS\tPCT_PERFECT_BARCODE\tPCT_SPACER_FAIL\n";
         for (Sample& sample : samples) {
             cout.precision(2);
             cout << fixed;
-            cout << sample.name << '\t' << sample.n_reads << '\t'
+            cout << sample.name << '\t'
+                << sample.barcode[0].id << '\t' << sample.barcode[1].id << '\t'
+                << sample.n_reads << '\t'
                 << sample.n_reads * 100.0 / max(analysis.n_total_reads, 1ul) << '\t'
                 << sample.n_perfect_barcode * 100.0 / max(sample.n_reads, 1ul) << '\t'
                 << sample.n_spacer_fail * 50.0 / max(sample.n_reads, 1ul)
                 << '\n';
         }
-        cout << "---------------------------------------------------------------\n";
-        cout << "Undetermined\t" << analysis.undetermined_reads << '\t'
-            << analysis.undetermined_reads * 100.0 / analysis.n_total_reads << "\t-\n";
+        cout << "Undetermined\t-\t-\t" << analysis.undetermined_reads << '\t'
+            << analysis.undetermined_reads * 100.0 / analysis.n_total_reads << "\t0\t0\n";
     }
     return 0;
 }
