@@ -20,6 +20,8 @@ sequences.
                                             (default=barcode-mismatches+1).
       -H [ --use-hamming ]                  Use Hamming distance instead of
                                             Levenshtein distance.
+      -n [ --no-trim ]                      Disable trimming of spacers and
+                                            barcodes.
       -t [ --threads ] arg (=16)            Number of threads to use.
       -h [ --help ]                         Show this help message.
 
@@ -92,6 +94,10 @@ Example `SAMPLE_SHEET`:
   * `use-hamming`: Use the Hamming distance instead of Levenshtein distance. The Hamming
     distance considers only substitutions, not insertions or deletions. It is a more strict
     matching criterion. It is also somewhat faster to compute.
+
+  * `no-trim`: Disable trimming of barcodes and spacers, instead outputting the full sequence
+    reads (if specified, the spacer sequences and the `alignment-mismatches` parameter are
+    ignored). The default is to trim both barcode and spacer sequences.
 
   * `alignment-mismatches`: Controls the pairwise alignment of the barcode+spacer sequence
     to the read, for the purpose of trimming. The number of edit operations allowed to match

@@ -181,7 +181,7 @@ class Analysis {
     vector<BarcodeAndSpacer> barcode0_list;
     vector<list<int> > barcode0_sample_list_list;
     std::array<unsigned int, 2> bclen;
-    bool use_levens;
+    bool use_levens, no_trim;
     unsigned int barcode_mismatches, alignment_mismatches;
 
     public:
@@ -191,8 +191,8 @@ class Analysis {
 
 
     Analysis(vector<Sample>& samples, std::array<unsigned int, 2> bclen, bool use_levens,
-            unsigned int barcode_mismatches, unsigned int alignment_mismatches) :
-        samples(samples), bclen(bclen), use_levens(use_levens),
+            unsigned int barcode_mismatches, unsigned int alignment_mismatches, bool no_trim) :
+        samples(samples), bclen(bclen), use_levens(use_levens), no_trim(no_trim),
         barcode_mismatches(barcode_mismatches), alignment_mismatches(alignment_mismatches)
     {
         // Make a list to map barcode1 to a list of samples with that barcode1
@@ -268,8 +268,14 @@ class Analysis {
                             sample.n_reads++;
                             if (bc_mismatches[0] + bc_mismatches[1] == 0) sample.n_perfect_barcode++;
                             results[idata].routing = sample_index;
-                            results[idata].trim[0] = n_trim_r[0];
-                            results[idata].trim[1] = n_trim_r[1];
+                            if (no_trim) {
+                                results[idata].trim[0] = 0;
+                                results[idata].trim[1] = 0;
+                            }
+                            else {
+                                results[idata].trim[0] = n_trim_r[0];
+                                results[idata].trim[1] = n_trim_r[1];
+                            }
                             undetermined = false;
                             break;
                         }
@@ -614,7 +620,7 @@ int main(int argc, char* argv[]) {
               output_prefix;
     unsigned int barcode_mismatches, num_threads;
     int alignment_mismatches;
-    bool use_hamming;
+    bool use_hamming, no_trim;
 
     unsigned int cores = thread::hardware_concurrency();
 
@@ -628,6 +634,8 @@ int main(int argc, char* argv[]) {
             "Allowed mismatches in alignment (default=barcode-mismatches+1).")
         ("use-hamming,H", po::bool_switch(&use_hamming),
             "Use Hamming distance instead of Levenshtein distance.")
+        ("no-trim,n", po::bool_switch(&no_trim),
+            "Disable trimming of spacers and barcodes.")
         ("threads,t", po::value<unsigned int>(&num_threads)->default_value(min(cores, 16u)),
             "Number of threads to use.")
         ("help,h", "Show this help message.")
@@ -761,7 +769,7 @@ int main(int argc, char* argv[]) {
     cerr << " Threads:                    " << num_threads << '\n';
     cerr << endl;
 
-    Analysis analysis(samples, bclen, use_levens, barcode_mismatches, alignment_mismatches);
+    Analysis analysis(samples, bclen, use_levens, barcode_mismatches, alignment_mismatches, no_trim);
     DemultiplexingManager manager(num_threads, inputs, analysis, sample_outputs);
     bool success = manager.execute();
 
