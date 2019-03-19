@@ -374,7 +374,6 @@ class DemultiplexingManager {
                 }
             }
             if (inputed) continue;
-            size_t output_max = 0;
             if (!analysis_busy && n_outputs_queued < OUTPUT_QUEUE_SUM) {
                 if (runAnalysisFunction()) continue;
             }
