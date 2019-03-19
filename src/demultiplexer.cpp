@@ -396,9 +396,10 @@ class DemultiplexingManager {
             if (inputs[0].eof() && inputs[1].eof()) {
                 bool producer_finished = false;
                 {
-                    unique_lock<mutex> lk0(inputmx[0]);
-                    unique_lock<mutex> lk1(inputmx[1]);
-                    unique_lock<mutex> lk2(analysismx);
+                    std::lock(inputmx[0], inputmx[1], analysismx);
+                    lock_guard<mutex> lk1(inputmx[0], adopt_lock);
+                    lock_guard<mutex> lk2(inputmx[1], adopt_lock);
+                    lock_guard<mutex> lk3(analysismx, adopt_lock);
                     bool any_input_busy = false, empty = true;
                     for (int i=0; i<2; ++i) {
                         empty = empty && inputqs[i].empty(); 
