@@ -14,7 +14,7 @@ sequences.
          OUTPUT_PREFIX
     
     Allowed options:
-      -b [ --barcode-mismatches ] arg (=1)  Allowed mismatches in barcode.
+      -b [ --barcode-mismatches ] arg (=0)  Allowed mismatches in barcode.
       -a [ --alignment-mismatches ] arg (=-1)
                                             Allowed mismatches in alignment
                                             (default=barcode-mismatches+1).
@@ -89,7 +89,7 @@ Example `SAMPLE_SHEET`:
     reads to samples. Note that the barcodes are not checked for uniqueness. If you specify
     a too large `barcode-mismatches`, the assignment to samples may be ambigous,
     and the end result is undefined (the reads are usually assigned to the first sample
-    in the list that matches). The default value is 1.
+    in the list that matches). The default value is 0.
 
   * `use-hamming`: Use the Hamming distance instead of Levenshtein distance. The Hamming
     distance considers only substitutions, not insertions or deletions. It is a more strict
