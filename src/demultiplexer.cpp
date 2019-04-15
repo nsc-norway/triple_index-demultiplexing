@@ -346,10 +346,10 @@ class DemultiplexingManager {
     bool execute() {
         int i;
         vector <thread> workers;
-        for (i=0; i<n_thread; ++i) {
+        for (i=1; i<n_thread; ++i) {
             workers.emplace_back(thread(&DemultiplexingManager::run, this, i));
         }
-        //run(0);
+        run(0);
         for (thread& t : workers) t.join();
         return !error;
     }
@@ -572,6 +572,10 @@ vector<BarcodeAndSpacer> getBarcodesAndSpacers(const string& barcode_file) {
 
 void getSamples(vector<Sample>& samples, const vector<BarcodeAndSpacer>& barcodes, const string& sample_sheet) {
     ifstream ssheet(sample_sheet);
+    if (!ssheet.good()) {
+        cerr << "Unable to open sample sheet file '" << sample_sheet << "'." << endl;
+        return;
+    }
     int linenum = 1;
     while (ssheet) {
         string line;
