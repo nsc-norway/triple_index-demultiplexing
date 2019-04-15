@@ -632,7 +632,7 @@ int main(int argc, char* argv[]) {
 
     po::options_description visible("Allowed options");
     visible.add_options()
-        ("barcode-mismatches,b", po::value<unsigned int>(&barcode_mismatches)->default_value(1),
+        ("barcode-mismatches,b", po::value<unsigned int>(&barcode_mismatches)->default_value(0),
             "Allowed mismatches in barcode.")
         ("alignment-mismatches,a", po::value<int>(&alignment_mismatches)->default_value(-1),
             "Allowed mismatches in alignment (default=barcode-mismatches+1).")
