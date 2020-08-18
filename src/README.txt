@@ -13,17 +13,24 @@ sequences.
          INPUT_FILE_R1 INPUT_FILE_R2 \
          OUTPUT_PREFIX
     
-    Allowed options:
-      -b [ --barcode-mismatches ] arg (=0)  Allowed mismatches in barcode.
-      -a [ --alignment-mismatches ] arg (=-1)
-                                            Allowed mismatches in alignment
-                                            (default=barcode-mismatches+1).
-      -H [ --use-hamming ]                  Use Hamming distance instead of
-                                            Levenshtein distance.
-      -n [ --no-trim ]                      Disable trimming of spacers and
-                                            barcodes.
-      -t [ --threads ] arg (=16)            Number of threads to use.
-      -h [ --help ]                         Show this help message.
+Allowed options:
+  -b [ --barcode-mismatches ] arg (=0)  Allowed mismatches in barcode.
+  -a [ --alignment-mismatches ] arg (=-1)
+                                        Allowed mismatches in alignment
+                                        (default=barcode-mismatches+1).
+  -H [ --use-hamming ]                  Use Hamming distance instead of
+                                        Levenshtein distance.
+  -n [ --no-trim ]                      Disable trimming of spacers and
+                                        barcodes.
+  -1 [ --trim-extra-r1 ] arg (=0)       Trim additional bases from the start of
+                                        R1 after removal of barcode & spacer
+                                        (use for primer).
+  -2 [ --trim-extra-r2 ] arg (=0)       Trim additional bases from the start of
+                                        R2 after removal of barcode & spacer
+                                        (use for primer).
+  -t [ --threads ] arg (=16)            Number of threads to use (use less than
+                                        16).
+  -h [ --help ]                         Show this help message.
 
 
 ## options
@@ -98,6 +105,9 @@ Example `SAMPLE_SHEET`:
   * `no-trim`: Disable trimming of barcodes and spacers, instead outputting the full sequence
     reads (if specified, the spacer sequences and the `alignment-mismatches` parameter are
     ignored). The default is to trim both barcode and spacer sequences.
+
+  * `trim-extra-r[12]`: Trim a fixed number of bases after removing the barcode and spacer.
+    This can be used to remove primer sequences at the start of the reads.
 
   * `alignment-mismatches`: Controls the pairwise alignment of the barcode+spacer sequence
     to the read, for the purpose of trimming. The number of edit operations allowed to match

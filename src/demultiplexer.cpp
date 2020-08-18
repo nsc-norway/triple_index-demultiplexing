@@ -645,9 +645,9 @@ int main(int argc, char* argv[]) {
         ("no-trim,n", po::bool_switch(&no_trim),
             "Disable trimming of spacers and barcodes.")
         ("trim-extra-r1,1", po::value<unsigned int>(&trim_extra_r1)->default_value(0),
-            "Trim additional bases from the start of R1 after removal of barcode & spacer (use for primer).")
+            "Trim additional bases from the start of R1 after removal of barcode & spacer.")
         ("trim-extra-r2,2", po::value<unsigned int>(&trim_extra_r2)->default_value(0),
-            "Trim additional bases from the start of R2 after removal of barcode & spacer (use for primer).")
+            "Trim additional bases from the start of R2 after removal of barcode & spacer.")
         ("threads,t", po::value<unsigned int>(&num_threads)->default_value(min(cores, 16u)),
             "Number of threads to use (use less than 16).")
         ("help,h", "Show this help message.")
