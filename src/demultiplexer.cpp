@@ -183,6 +183,7 @@ class Analysis {
     std::array<unsigned int, 2> bclen;
     bool use_levens, no_trim;
     unsigned int barcode_mismatches, alignment_mismatches;
+    unsigned int trim_extra_r1, trim_extra_r2;
 
     public:
 
@@ -191,9 +192,11 @@ class Analysis {
 
 
     Analysis(vector<Sample>& samples, std::array<unsigned int, 2> bclen, bool use_levens,
-            unsigned int barcode_mismatches, unsigned int alignment_mismatches, bool no_trim) :
+            unsigned int barcode_mismatches, unsigned int alignment_mismatches, bool no_trim,
+            unsigned int trim_extra_r1, unsigned int trim_extra_r2) :
         samples(samples), bclen(bclen), use_levens(use_levens), no_trim(no_trim),
-        barcode_mismatches(barcode_mismatches), alignment_mismatches(alignment_mismatches)
+        barcode_mismatches(barcode_mismatches), alignment_mismatches(alignment_mismatches),
+        trim_extra_r1(trim_extra_r1), trim_extra_r2(trim_extra_r2)
     {
         // Make a list to map barcode1 to a list of samples with that barcode1
         for (int sample_index=0; sample_index<samples.size(); ++sample_index) {
@@ -273,8 +276,8 @@ class Analysis {
                                 results[idata].trim[1] = 0;
                             }
                             else {
-                                results[idata].trim[0] = n_trim_r[0];
-                                results[idata].trim[1] = n_trim_r[1];
+                                results[idata].trim[0] = n_trim_r[0] + trim_extra_r1;
+                                results[idata].trim[1] = n_trim_r[1] + trim_extra_r2;
                             }
                             undetermined = false;
                             break;
@@ -624,6 +627,7 @@ int main(int argc, char* argv[]) {
               output_prefix;
     unsigned int barcode_mismatches, num_threads;
     int alignment_mismatches;
+    unsigned int trim_extra_r1, trim_extra_r2;
     bool use_hamming, no_trim;
 
     unsigned int cores = thread::hardware_concurrency();
@@ -640,8 +644,12 @@ int main(int argc, char* argv[]) {
             "Use Hamming distance instead of Levenshtein distance.")
         ("no-trim,n", po::bool_switch(&no_trim),
             "Disable trimming of spacers and barcodes.")
+        ("trim-extra-r1,1", po::value<unsigned int>(&trim_extra_r1)->default_value(0),
+            "Trim additional bases from the start of R1 after removal of barcode & spacer (use for primer).")
+        ("trim-extra-r2,2", po::value<unsigned int>(&trim_extra_r2)->default_value(0),
+            "Trim additional bases from the start of R2 after removal of barcode & spacer (use for primer).")
         ("threads,t", po::value<unsigned int>(&num_threads)->default_value(min(cores, 16u)),
-            "Number of threads to use.")
+            "Number of threads to use (use less than 16).")
         ("help,h", "Show this help message.")
     ;
     po::options_description positionals("Positional options(hidden)");
@@ -770,10 +778,11 @@ int main(int argc, char* argv[]) {
     else            cerr << "Hamming" << '\n';
     cerr << " Alignment string distance:  " << alignment_mismatches << '\n';
     cerr << " Input/output compression:   " << (compressed ? "gzip" : "off") << '\n';
+    cerr << " Trim extra bases R1 / R2:   " << trim_extra_r1 << " / " << trim_extra_r2 << '\n';
     cerr << " Threads:                    " << num_threads << '\n';
     cerr << endl;
 
-    Analysis analysis(samples, bclen, use_levens, barcode_mismatches, alignment_mismatches, no_trim);
+    Analysis analysis(samples, bclen, use_levens, barcode_mismatches, alignment_mismatches, no_trim, trim_extra_r1, trim_extra_r2);
     DemultiplexingManager manager(num_threads, inputs, analysis, sample_outputs);
     bool success = manager.execute();
 
